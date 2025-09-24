@@ -1,16 +1,31 @@
-name: Notify Slack on Urgent Label
+name: Urgent PR Slack Notification
 
 on:
   pull_request:
     types: [labeled]
 
 jobs:
-  notify_slack:
+  notify_urgent:
     if: github.event.label.name == 'urgent'
     runs-on: ubuntu-latest
     steps:
-      - name: Notify Slack
-        uses: rtCamp/action-slack-notify@v2
-        env:
-          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-          SLACK_MESSAGE: "🚨 Urgent PR: ${{ github.event.pull_request.title }} - ${{ github.event.pull_request.html_url }}"
+      - name: Check PR label still present
+        uses: actions/github-script@v7
+        id: label_check
+        with:
+          script: |
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number
+            });
+            const hasUrgent = pr.data.labels.some(label => label.name === 'urgent');
+            return hasUrgent;
+      - name: Send Slack notification if urgent
+        if: steps.label_check.outputs.result == 'true'
+        uses: slackapi/slack-github-action@v1.25.0
+        with:
+          payload: |
+            {
+              "text": "🚨 Urgent PR: <${{ github.event.pull_request.html_url }}|${{ github.event.pull_request.title }}> needs review within 30 minutes!"
+            }
