@@ -2,34 +2,58 @@ name: Urgent PR Slack Notification
 
 on:
   workflow_run:
-    workflows: ["Sync urgent label for issue to PR"]
-    types:
-      - completed
+    workflows: ["Sync urgent label from issue to PR"]  
+    types: [completed]
   pull_request:
-    types: [labeled, opened]
+    types: [opened, labeled, synchronize]
 
 jobs:
   notify_urgent:
-    if: contains(github.event.pull_request.labels.*.name, 'urgent')
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_run' }}
+
     steps:
-      - name: Check PR label still present
+      - name: Determine PR number
+        id: pr
         uses: actions/github-script@v7
-        id: label_check
         with:
           script: |
+            const {context, github, core} = require('@actions/github');
+            let number = null;
+
+            if (context.eventName === 'pull_request') {
+              number = context.payload.pull_request.number;
+            } else if (context.eventName === 'workflow_run') {
+              const prs = context.payload.workflow_run.pull_requests || [];
+              if (prs.length) number = prs[0].number;
+            }
+
+            core.setOutput('number', number ?? '');
+      - name: Check label "urgent"
+        id: label_check
+        if: ${{ steps.pr.outputs.number != '' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const {context, github, core} = require('@actions/github');
+            const prNumber = Number('${{ steps.pr.outputs.number }}');
+
             const pr = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: context.payload.pull_request.number
+              pull_number: prNumber
             });
-            const hasUrgent = pr.data.labels.some(label => label.name === 'urgent');
-            return hasUrgent;
+
+            const hasUrgent = pr.data.labels.some(l => l.name === 'urgent');
+            core.setOutput('hasUrgent', String(hasUrgent));
+            core.setOutput('url', pr.data.html_url);
+            core.setOutput('title', pr.data.title);
+
       - name: Send Slack notification if urgent
-        if: steps.label_check.outputs.result == 'true'
+        if: ${{ steps.label_check.outputs.hasUrgent == 'true' }}
         uses: slackapi/slack-github-action@v1.25.0
         with:
           payload: |
-            {
-              "text": "🚨 Urgent PR: <${{ github.event.pull_request.html_url }}|${{ github.event.pull_request.title }}> needs review within 30 minutes!"
-            }
+            { "text": "🚨 Urgent PR: <${{ steps.label_check.outputs.url }}|${{ steps.label_check.outputs.title }}> needs review within 30 minutes!" }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}  # 或改用 bot token 方式
