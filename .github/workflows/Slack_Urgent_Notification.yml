@@ -3,6 +3,7 @@ name: Urgent PR Slack Notification
 on:
   pull_request:
     types: [opened, labeled, synchronize]
+  workflow_dispatch: 
 
 jobs:
   notify_urgent:
