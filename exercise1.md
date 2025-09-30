@@ -6,4 +6,4 @@ While Jenkins and GitHub Actions are widely used, there are other options like G
 
 For **building**, although PHP is not compiled, our pipeline includes preparing a clean production-ready package. This typically involves running `composer install --no-dev`, optimizing autoloaders, and zipping the application directory for deployment. In some setups, we also build a Docker image to ensure consistency across environments.
 
-We prefer a **cloud-based CI/CD setup**, as it reduces maintenance and scales easily. However, if we handled sensitive customer data or had strict security constraints, a self-hosted solution could be considered. The final decision would depend on cost, compliance needs, and operational complexity.123345
+We prefer a **cloud-based CI/CD setup**, as it reduces maintenance and scales easily. However, if we handled sensitive customer data or had strict security constraints, a self-hosted solution could be considered. The final decision would depend on cost, compliance needs, and operational complexity.123345123
