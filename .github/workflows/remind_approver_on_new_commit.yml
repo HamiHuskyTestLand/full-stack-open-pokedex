@@ -17,12 +17,7 @@ jobs:
         with:
           script: |
             const prNumber = context.payload.pull_request.number;
-            
-            console.log(`=== DEBUG: Processing PR #${prNumber} ===`);
-            
-            // Get requested reviewers from webhook payload
             const requestedReviewers = context.payload.pull_request.requested_reviewers.map(r => r.login);
-            console.log(`Requested reviewers from webhook: [${requestedReviewers.join(', ') || 'None'}]`);
             
             // Get reviews for this PR
             const { data: reviews } = await github.rest.pulls.listReviews({
@@ -31,57 +26,28 @@ jobs:
               pull_number: prNumber
             });
             
-            console.log(`=== DEBUG: Found ${reviews.length} total reviews ===`);
-            reviews.forEach((review, index) => {
-              console.log(`Review ${index + 1}: ${review.user.login} - ${review.state} - ${review.submitted_at}`);
-            });
-            
             // Get latest review per user
-            console.log(`=== DEBUG: Processing latest reviews per user ===`);
             const latestReviewsByUser = reviews
               .sort((a, b) => new Date(a.submitted_at) - new Date(b.submitted_at))
               .reduce((acc, review) => {
-                console.log(`Processing: ${review.user.login} - ${review.state} - ${review.submitted_at}`);
                 acc[review.user.login] = review;
                 return acc;
               }, {});
             
-            console.log(`=== DEBUG: Latest review state per user ===`);
-            Object.entries(latestReviewsByUser).forEach(([user, review]) => {
-              console.log(`${user}: ${review.state} (${review.submitted_at})`);
-            });
-            
             // Find current approvers (exclude those with pending review requests)
-            console.log(`=== DEBUG: Filtering approvers ===`);
             const currentApprovers = Object.values(latestReviewsByUser)
-              .filter(review => {
-                const isApproved = review.state === 'APPROVED';
-                const isNotBot = !review.user.login.endsWith('[bot]');
-                const hasNoPendingRequest = !requestedReviewers.includes(review.user.login);
-                
-                console.log(`${review.user.login}: approved=${isApproved}, notBot=${isNotBot}, noPendingRequest=${hasNoPendingRequest}`);
-                
-                return isApproved && isNotBot && hasNoPendingRequest;
-              })
+              .filter(review => 
+                review.state === 'APPROVED' && 
+                !review.user.login.endsWith('[bot]') &&
+                !requestedReviewers.includes(review.user.login)
+              )
               .sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
             
-            if (currentApprovers.length === 0) {
-              console.log(`=== RESULT: No valid approvers found ===`);
-              return { hasApprovals: false };
-            }
-            
-            console.log(`=== DEBUG: Valid approvers found ===`);
-            currentApprovers.forEach((approver, index) => {
-              console.log(`${index + 1}. ${approver.user.login} (${approver.submitted_at})`);
-            });
-            
-            console.log(`=== RESULT: Will notify ${currentApprovers[0].user.login} ===`);
-            
-            return {
+            return currentApprovers.length > 0 ? {
               hasApprovals: true,
               prNumber,
               mostRecentApprover: currentApprovers[0].user.login
-            };
+            } : { hasApprovals: false };
 
       - name: Comment on PR to notify stale reviewer
         if: fromJson(steps.find-approvers.outputs.result).hasApprovals
@@ -89,4 +55,4 @@ jobs:
         with:
           issue-number: ${{ fromJson(steps.find-approvers.outputs.result).prNumber }}
           body: |
-            @${{ fromJson(steps.find-approvers.outputs.result).mostRecentApprover }} A new commit has been pushed to this PR. Please review again if the merging panel appears your review is stale.
+            @${{ fromJson(steps.find-approvers.outputs.result).mostRecentApprover }} A new commit has been pushed to this PR. Please review again if your review appears stale and merging is blocked.
