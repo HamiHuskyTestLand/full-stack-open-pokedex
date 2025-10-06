@@ -19,7 +19,6 @@ jobs:
             const prNumber = context.payload.pull_request.number;
             const requestedReviewers = context.payload.pull_request.requested_reviewers.map(r => r.login);
             
-            // Get reviews for this PR
             const { data: reviews } = await github.rest.pulls.listReviews({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -27,14 +26,12 @@ jobs:
             });
             
             // Get latest review per user
-            const latestReviewsByUser = reviews
-              .sort((a, b) => new Date(a.submitted_at) - new Date(b.submitted_at))
-              .reduce((acc, review) => {
-                acc[review.user.login] = review;
-                return acc;
-              }, {});
+            const latestReviewsByUser = reviews.reduce((acc, review) => {
+              acc[review.user.login] = review;
+              return acc;
+            }, {});
             
-            // Find current approvers (exclude those with pending review requests)
+            // Find current approvers
             const currentApprovers = Object.values(latestReviewsByUser)
               .filter(review => 
                 review.state === 'APPROVED' && 
@@ -43,7 +40,6 @@ jobs:
               )
               .sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
             
-            // Check if all reviewers have approved (no pending human reviewers)
             const hasPendingHumanReviewers = requestedReviewers.some(reviewer => 
               !reviewer.endsWith('[bot]')
             );
