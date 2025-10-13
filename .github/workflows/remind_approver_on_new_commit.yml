@@ -19,6 +19,21 @@ jobs:
             const prNumber = context.payload.pull_request.number;
             const requestedReviewers = context.payload.pull_request.requested_reviewers.map(r => r.login);
             
+            // Get timeline to find who was ever requested as reviewer
+            const { data: timeline } = await github.rest.issues.listEventsForTimeline({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber
+            });
+            
+            // Find all users who were ever requested for review
+            const allEverRequestedReviewers = new Set(requestedReviewers);
+            timeline.forEach(event => {
+              if (event.event === 'review_requested' && event.requested_reviewer) {
+                allEverRequestedReviewers.add(event.requested_reviewer.login);
+              }
+            });
+            
             const { data: reviews } = await github.rest.pulls.listReviews({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -31,20 +46,27 @@ jobs:
               return acc;
             }, {});
             
-            // Find current approvers
-            const currentApprovers = Object.values(latestReviewsByUser)
+            // Only check reviews from actual reviewers
+            const reviewerOnlyReviews = Object.values(latestReviewsByUser)
               .filter(review => 
-                review.state === 'APPROVED' && 
                 !review.user.login.endsWith('[bot]') &&
-                !requestedReviewers.includes(review.user.login)
-              )
+                allEverRequestedReviewers.has(review.user.login)
+              );
+            
+            // Find current approvers
+            const currentApprovers = reviewerOnlyReviews
+              .filter(review => review.state === 'APPROVED')
               .sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
             
-            const hasPendingHumanReviewers = requestedReviewers.some(reviewer => 
-              !reviewer.endsWith('[bot]')
-            );
+            // Check for blocking conditions
+            const hasChangesRequested = reviewerOnlyReviews.some(review => review.state === 'CHANGES_REQUESTED');
+            const hasOnlyCommented = reviewerOnlyReviews.some(review => review.state === 'COMMENTED');
+            const hasPendingHumanReviewers = requestedReviewers.some(reviewer => !reviewer.endsWith('[bot]'));
             
-            const allReviewersApproved = currentApprovers.length > 0 && !hasPendingHumanReviewers;
+            const allReviewersApproved = currentApprovers.length > 0 && 
+                                       !hasPendingHumanReviewers && 
+                                       !hasChangesRequested &&
+                                       !hasOnlyCommented;
             
             return allReviewersApproved ? {
               hasApprovals: true,
