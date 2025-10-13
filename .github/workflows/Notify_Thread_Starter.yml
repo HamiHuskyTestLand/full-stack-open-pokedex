@@ -1,0 +1,97 @@
+name: Comment on Unresolved Review Threads (Notify Thread Starter)
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  check-unresolved-conversations:
+    runs-on: ubuntu-latest
+    if: github.event.review.state == 'approved'
+    steps:
+      # Step 1: Query unresolved review threads and filter those started by the approver
+      - name: Find unresolved threads started by this reviewer
+        id: check-unresolved-threads
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Get PR number and the username of the reviewer who approved
+            const prNumber = context.payload.pull_request.number;
+            const reviewer = context.payload.review.user.login;
+
+            // GraphQL query to get the first comment (thread starter) in each review thread
+            const query = `
+              query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $number) {
+                    reviewThreads(first: 100) {
+                      nodes {
+                        isResolved
+                        comments(first: 1) {
+                          nodes {
+                            url
+                            body
+                            author {
+                              login
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `;
+
+            // Fetch review threads using GraphQL
+            const result = await github.graphql(query, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              number: prNumber
+            });
+
+            // Get unresolved threads
+            const reviewThreads = result.repository.pullRequest.reviewThreads.nodes;
+            const unresolvedThreads = reviewThreads.filter(thread => !thread.isResolved);
+
+            // Filter threads where the starter is this reviewer
+            const myUnresolvedThreads = unresolvedThreads.filter(thread => {
+              const firstComment = thread.comments.nodes[0];
+              return firstComment?.author?.login === reviewer;
+            });
+
+            // If there are unresolved threads started by this reviewer, prepare the comment body
+            if (myUnresolvedThreads.length > 0) {
+              const commentBody = `@${reviewer} You have approved this PR, but you also started ${myUnresolvedThreads.length} unresolved review thread(s). Please resolve your own conversations before merging.
+
+**Your unresolved review threads:**
+${myUnresolvedThreads.slice(0, 8).map((thread, index) => {
+  const comment = thread.comments.nodes[0];
+  const preview = comment?.body?.substring(0, 70) || '';
+  return `${index + 1}. [View thread](${comment?.url || '#'}) - ${preview}${preview.length >= 70 ? '...' : ''}`;
+}).join('\n')}${myUnresolvedThreads.length > 8 ? `\n\n*... and ${myUnresolvedThreads.length - 8} more thread(s)*` : ''}
+
+Please resolve your conversations before merging this PR. Thank you! 🙏`;
+
+              // Output for next step
+              return {
+                prNumber,
+                commentBody,
+                shouldComment: true
+              };
+            }
+            // If no such threads, do not comment
+            return {
+              prNumber,
+              commentBody: '',
+              shouldComment: false
+            };
+          result-encoding: string
+
+      # Step 2: Leave a comment using peter-evans/create-or-update-comment (only if needed)
+      - name: Comment on PR to notify reviewer
+        if: steps.check-unresolved-threads.outputs.shouldComment == 'true'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ steps.check-unresolved-threads.outputs.prNumber }}
+          body: ${{ steps.check-unresolved-threads.outputs.commentBody }}
