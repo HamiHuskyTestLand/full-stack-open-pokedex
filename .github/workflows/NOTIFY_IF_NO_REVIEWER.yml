@@ -33,4 +33,4 @@ jobs:
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body: |
-            @DESIGNATED_USERNAME Please help assign a reviewer for this PR. Thank you!
+            @kreuz123, Please request a reviewer for this PR. 
