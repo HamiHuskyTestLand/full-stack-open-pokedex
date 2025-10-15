@@ -29,21 +29,10 @@ jobs:
             
             core.setOutput('has_reviewers', hasHumanReviewers);
 
-      - name: Find existing comment
-        if: steps.check.outputs.has_reviewers == 'false'
-        uses: peter-evans/find-comment@v3
-        id: fc
-        with:
-          issue-number: ${{ github.event.pull_request.number }}
-          comment-author: 'github-actions[bot]'
-          body-includes: 'Please request a reviewer for this PR'
-
-      - name: Create or update comment
+      - name: Comment on PR to notify designated person
         if: steps.check.outputs.has_reviewers == 'false'
         uses: peter-evans/create-or-update-comment@v4
         with:
-          comment-id: ${{ steps.fc.outputs.comment-id }}
           issue-number: ${{ github.event.pull_request.number }}
           body: |
             @kreuz123 Please request a reviewer for this PR.
-          edit-mode: replace
