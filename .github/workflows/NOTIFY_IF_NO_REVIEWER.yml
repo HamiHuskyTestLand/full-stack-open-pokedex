@@ -20,12 +20,18 @@ jobs:
               pull_number: context.issue.number
             });
             
-            const hasReviewers = pr.requested_reviewers.length > 0;
+            const humanReviewers = pr.requested_reviewers.filter(reviewer => 
+              reviewer.type !== 'Bot' && 
+              reviewer.login.toLowerCase() !== 'copilot'
+            );
             
-            console.log(`PR has reviewers: ${hasReviewers}`);
-            console.log(`Requested reviewers: ${pr.requested_reviewers.map(r => r.login).join(', ')}`);
+            const hasHumanReviewers = humanReviewers.length > 0;
             
-            core.setOutput('has_reviewers', hasReviewers);
+            console.log(`PR has human reviewers: ${hasHumanReviewers}`);
+            console.log(`All requested reviewers: ${pr.requested_reviewers.map(r => r.login).join(', ')}`);
+            console.log(`Human reviewers only: ${humanReviewers.map(r => r.login).join(', ')}`);
+            
+            core.setOutput('has_reviewers', hasHumanReviewers);
 
       - name: Comment on PR to notify designated person
         if: steps.check.outputs.has_reviewers == 'false'
@@ -33,4 +39,4 @@ jobs:
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body: |
-            @kreuz123, Please request a reviewer for this PR. 
+            @kreuz123 Please request a reviewer for this PR. 
