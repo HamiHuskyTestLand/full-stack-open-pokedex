@@ -21,8 +21,8 @@ jobs:
             });
             
             const humanReviewers = pr.requested_reviewers.filter(reviewer => 
-              reviewer.type !== 'Bot' && 
-              reviewer.login.toLowerCase() !== 'copilot'
+              reviewer.type === 'User' &&
+              !/bot|actions|copilot/i.test(reviewer.login)
             );
             
             const hasHumanReviewers = humanReviewers.length > 0;
