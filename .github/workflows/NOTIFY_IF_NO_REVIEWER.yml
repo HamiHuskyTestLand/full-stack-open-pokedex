@@ -1,0 +1,36 @@
+name: Notify if No Reviewer Assigned
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+
+jobs:
+  check-reviewers:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if PR has reviewers
+        id: check
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            
+            const hasReviewers = pr.requested_reviewers.length > 0;
+            
+            console.log(`PR has reviewers: ${hasReviewers}`);
+            console.log(`Requested reviewers: ${pr.requested_reviewers.map(r => r.login).join(', ')}`);
+            
+            core.setOutput('has_reviewers', hasReviewers);
+
+      - name: Comment on PR to notify designated person
+        if: steps.check.outputs.has_reviewers == 'false'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            @DESIGNATED_USERNAME Please help assign a reviewer for this PR. Thank you!
