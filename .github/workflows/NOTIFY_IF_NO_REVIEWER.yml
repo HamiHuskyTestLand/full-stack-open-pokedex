@@ -2,40 +2,40 @@ name: Notify if No Reviewer Assigned
 
 on:
     pull_request:
-        types: [opened, ready_for_review]
+      types: [opened, ready_for_review]
 
 jobs:
     check-reviewers:
-        runs-on: ubuntu-latest
-        steps:
-            - name: Check if PR has reviewers
-              id: check
-              uses: actions/github-script@v7
-              with:
-                  github-token: ${{ secrets.GITHUB_TOKEN }}
-                  script: |
-                      const pr = context.payload.pull_request;
-                      
-                      if (pr.draft) {
-                          core.setOutput('has_reviewers', 'true');
-                          return;
-                      }
-                      
-                      const requestedReviewers = pr.requested_reviewers || [];
-                      
-                      const humanReviewers = requestedReviewers.filter(reviewer => 
-                          reviewer.type === 'User' &&
-                          !/bot|copilot|github-actions/i.test(reviewer.login)
-                      );
-                      
-                      const hasHumanReviewers = humanReviewers.length > 0;
-                      
-                      core.setOutput('has_reviewers', hasHumanReviewers);
+      runs-on: ubuntu-latest
+      steps:
+        - name: Check if PR has reviewers
+          id: check
+          uses: actions/github-script@v7
+          with:
+            github-token: ${{ secrets.GITHUB_TOKEN }}
+            script: |
+                const pr = context.payload.pull_request;
 
-            - name: Comment on PR to notify designated person
-              if: steps.check.outputs.has_reviewers == 'false'
-              uses: peter-evans/create-or-update-comment@v4
-              with:
-                  issue-number: ${{ github.event.pull_request.number }}
-                  body: |
-                      @kreuz123, Please request a reviewer for this PR.
+                if (pr.draft) {
+                    core.setOutput('has_reviewers', 'true');
+                    return;
+                }
+
+                const requestedReviewers = pr.requested_reviewers || [];
+
+                const humanReviewers = requestedReviewers.filter(reviewer =>
+                    reviewer.type === 'User' &&
+                    !/bot|copilot|github-actions/i.test(reviewer.login)
+                );
+
+                const hasHumanReviewers = humanReviewers.length > 0;
+
+                core.setOutput('has_reviewers', hasHumanReviewers);
+
+        - name: Comment on PR to notify designated person
+          if: steps.check.outputs.has_reviewers == 'false'
+          uses: peter-evans/create-or-update-comment@v4
+          with:
+            issue-number: ${{ github.event.pull_request.number }}
+            body: |
+              @kreuz123, Please request a reviewer for this PR.
