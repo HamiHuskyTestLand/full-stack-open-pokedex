@@ -14,7 +14,15 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const requestedReviewers = context.payload.pull_request.requested_reviewers || [];
+            const pr = context.payload.pull_request;
+            
+            if (pr.draft) {
+              console.log('PR is in draft state, skipping notification');
+              core.setOutput('has_reviewers', 'true'); 
+              return;
+            }
+            
+            const requestedReviewers = pr.requested_reviewers || [];
             
             const humanReviewers = requestedReviewers.filter(reviewer => 
               reviewer.type === 'User' &&
@@ -23,6 +31,7 @@ jobs:
             
             const hasHumanReviewers = humanReviewers.length > 0;
             
+            console.log(`PR is draft: ${pr.draft}`);
             console.log(`PR has human reviewers: ${hasHumanReviewers}`);
             console.log(`All requested reviewers: ${requestedReviewers.map(r => `${r.login} (${r.type})`).join(', ')}`);
             console.log(`Human reviewers only: ${humanReviewers.map(r => r.login).join(', ') || 'None'}`);
