@@ -40,7 +40,6 @@ jobs:
                             }
                         }
                     }
-                  }
                 }
             `, { owner, repo, number: context.payload.pull_request.number });
 
