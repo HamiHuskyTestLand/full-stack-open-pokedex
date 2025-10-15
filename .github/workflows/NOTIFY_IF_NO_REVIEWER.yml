@@ -16,7 +16,7 @@ jobs:
           script: |
             const requestedReviewers = context.payload.pull_request.requested_reviewers || [];
             
-            const humanReviewers = pr.requested_reviewers.filter(reviewer => 
+            const humanReviewers = requestedReviewers.filter(reviewer => 
               reviewer.type === 'User' &&
               !/bot|actions|copilot/i.test(reviewer.login)
             );
