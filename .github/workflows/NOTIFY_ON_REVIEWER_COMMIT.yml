@@ -53,7 +53,7 @@ jobs:
             
             console.log('Pusher is a reviewer, checking for other reviewers...');
             
-            // 修正：使用 allReviewers 而不是 requestedReviewers
+            // Fix: use allReviewers instead of requestedReviewers
             const otherReviewers = allReviewers.filter(r => r !== pusher);
             
             if (otherReviewers.length === 0) {
