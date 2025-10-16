@@ -47,7 +47,7 @@ jobs:
               ...humanReviewers
             ])];
             
-            console.log(`All Reviewers (requested + reviewed, excluding bots): ${allReviewers.join(', ')}`);
+            console.log(`All Reviewers (excluding bots): ${allReviewers.join(', ')}`);
             
             const isPusherReviewer = allReviewers.includes(pusher) && pusher !== prAuthor;
             
@@ -75,7 +75,12 @@ jobs:
             const reviewerStatus = {};
             
             otherReviewers.forEach(reviewer => {
-              reviewerStatus[reviewer] = { approved: false, lastReviewDate: null };
+              const needsReview = requestedReviewers.includes(reviewer);
+              reviewerStatus[reviewer] = { 
+                approved: false, 
+                lastReviewDate: null,
+                needsReview: needsReview
+              };
             });
             
             reviews.forEach(review => {
@@ -86,7 +91,9 @@ jobs:
                 if (!reviewerStatus[reviewer].lastReviewDate || 
                     reviewDate > reviewerStatus[reviewer].lastReviewDate) {
                   reviewerStatus[reviewer].lastReviewDate = reviewDate;
-                  reviewerStatus[reviewer].approved = (review.state === 'APPROVED');
+                  if (!reviewerStatus[reviewer].needsReview) {
+                    reviewerStatus[reviewer].approved = (review.state === 'APPROVED');
+                  }
                 }
               }
             });
@@ -96,7 +103,8 @@ jobs:
             const allApproved = otherReviewers.every(r => reviewerStatus[r].approved);
             
             if (!allApproved) {
-              console.log('Not all reviewers approved, skip notification');
+              const pendingReviewers = otherReviewers.filter(r => !reviewerStatus[r].approved);
+              console.log(`Not all reviewers approved. Pending: ${pendingReviewers.join(', ')}`);
               return { shouldNotify: false };
             }
             
