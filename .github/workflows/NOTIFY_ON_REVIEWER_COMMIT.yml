@@ -1,0 +1,87 @@
+name: Notify on Reviewer Commit
+
+on:
+  pull_request_target:
+    types: [synchronize]
+
+jobs:
+  notify-reviewers:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    
+    steps:
+      - name: Check and prepare notification
+        id: check-reviewers
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const pusher = context.payload.sender.login;
+            const pr = context.payload.pull_request;
+            const prAuthor = pr.user.login;
+            const prNumber = pr.number;
+            
+            const requestedReviewers = (pr.requested_reviewers || [])
+              .filter(r => r.type !== 'Bot')
+              .map(r => r.login);
+            
+            console.log(`Pusher: ${pusher}`);
+            console.log(`PR Author: ${prAuthor}`);
+            console.log(`Requested Reviewers (excluding bots): ${requestedReviewers.join(', ')}`);
+            
+            const { data: reviews } = await github.rest.pulls.listReviews({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+            
+            const allReviewers = [...new Set([
+              ...requestedReviewers,
+              ...reviews.map(r => r.user.login)
+            ])];
+            
+            const isPusherReviewer = allReviewers.includes(pusher) && pusher !== prAuthor;
+            
+            if (!isPusherReviewer) {
+              console.log('Pusher is not a reviewer, skipping notification');
+              return { shouldNotify: false };
+            }
+            
+            console.log('Pusher is a reviewer, checking for other reviewers...');
+            
+            const otherReviewers = requestedReviewers.filter(r => r !== pusher);
+            const reviewerMentions = otherReviewers.map(r => `@${r}`).join(' ');
+            const designatedPerson = process.env.DESIGNATED_PERSON;
+            
+            console.log(`Other human reviewers: ${otherReviewers.join(', ')}`);
+            
+            return {
+              shouldNotify: true,
+              hasOtherReviewers: otherReviewers.length > 0,
+              prNumber: prNumber,
+              pusher: pusher,
+              reviewerMentions: reviewerMentions,
+              designatedPerson: designatedPerson
+            };
+
+      - name: Notify other reviewers
+        if: fromJson(steps.check-reviewers.outputs.result).shouldNotify && fromJson(steps.check-reviewers.outputs.result).hasOtherReviewers
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ fromJson(steps.check-reviewers.outputs.result).prNumber }}
+          body: |
+            Reviewer @${{ fromJson(steps.check-reviewers.outputs.result).pusher }} has pushed new changes to this PR.
+            
+            ${{ fromJson(steps.check-reviewers.outputs.result).reviewerMentions }} - Please review the latest changes when you have a chance.
+
+      - name: Notify designated person
+        if: fromJson(steps.check-reviewers.outputs.result).shouldNotify && !fromJson(steps.check-reviewers.outputs.result).hasOtherReviewers
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ fromJson(steps.check-reviewers.outputs.result).prNumber }}
+          body: |
+            Reviewer @${{ fromJson(steps.check-reviewers.outputs.result).pusher }} has pushed changes, but no other reviewers are assigned.
+            
+            @kreuz123 - Please assign additional reviewers or review this PR.
