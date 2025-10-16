@@ -42,6 +42,8 @@ jobs:
               ...reviews.map(r => r.user.login)
             ])];
             
+            console.log(`All Reviewers (requested + reviewed): ${allReviewers.join(', ')}`);
+            
             const isPusherReviewer = allReviewers.includes(pusher) && pusher !== prAuthor;
             
             if (!isPusherReviewer) {
@@ -51,7 +53,8 @@ jobs:
             
             console.log('Pusher is a reviewer, checking for other reviewers...');
             
-            const otherReviewers = requestedReviewers.filter(r => r !== pusher);
+            // 修正：使用 allReviewers 而不是 requestedReviewers
+            const otherReviewers = allReviewers.filter(r => r !== pusher);
             
             if (otherReviewers.length === 0) {
               console.log('No other reviewers, will notify designated person');
@@ -62,6 +65,8 @@ jobs:
                 pusher: pusher
               };
             }
+            
+            console.log(`Other reviewers: ${otherReviewers.join(', ')}`);
             
             const reviewerStatus = {};
             
