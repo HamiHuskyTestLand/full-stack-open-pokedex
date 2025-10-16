@@ -15,6 +15,7 @@ jobs:
       - name: Check and prepare notification
         id: check-reviewers
         uses: actions/github-script@v7
+
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -52,22 +53,78 @@ jobs:
             console.log('Pusher is a reviewer, checking for other reviewers...');
             
             const otherReviewers = requestedReviewers.filter(r => r !== pusher);
-            const reviewerMentions = otherReviewers.map(r => `@${r}`).join(' ');
-            const designatedPerson = process.env.DESIGNATED_PERSON;
             
-            console.log(`Other human reviewers: ${otherReviewers.join(', ')}`);
+            if (otherReviewers.length === 0) {
+              console.log('No other reviewers, will notify designated person');
+              return {
+                shouldNotify: true,
+                scenario: 'no-reviewers',
+                prNumber: prNumber,
+                pusher: pusher,
+                designatedPerson: @kreuz123
+              };
+            }
             
-            return {
-              shouldNotify: true,
-              hasOtherReviewers: otherReviewers.length > 0,
-              prNumber: prNumber,
-              pusher: pusher,
-              reviewerMentions: reviewerMentions,
-              designatedPerson: designatedPerson
-            };
+            const reviewerStatus = {};
+            
+            otherReviewers.forEach(reviewer => {
+              reviewerStatus[reviewer] = { approved: false, lastReviewDate: null };
+            });
+            
+            reviews.forEach(review => {
+              const reviewer = review.user.login;
+              if (otherReviewers.includes(reviewer)) {
+                const reviewDate = new Date(review.submitted_at);
+                
+                if (!reviewerStatus[reviewer].lastReviewDate || 
+                    reviewDate > reviewerStatus[reviewer].lastReviewDate) {
+                  reviewerStatus[reviewer].lastReviewDate = reviewDate;
+                  reviewerStatus[reviewer].approved = (review.state === 'APPROVED');
+                }
+              }
+            });
+            
+            console.log('Reviewer Status:', JSON.stringify(reviewerStatus, null, 2));
+            
+            const allApproved = otherReviewers.every(r => reviewerStatus[r].approved);
+            
+            if (!allApproved) {
+              console.log('Not all reviewers approved, skip notification');
+              return { shouldNotify: false };
+            }
+            
+            console.log('All reviewers approved');
+            
+            if (otherReviewers.length === 1) {
+              console.log(`Single reviewer ${otherReviewers[0]}, will notify`);
+              return {
+                shouldNotify: true,
+                scenario: 'single-reviewer-approved',
+                prNumber: prNumber,
+                pusher: pusher,
+                reviewerMentions: `@${otherReviewers[0]}`
+              };
+            } else {
+              const lastApprover = otherReviewers.reduce((latest, reviewer) => {
+                if (!latest || reviewerStatus[reviewer].lastReviewDate > reviewerStatus[latest].lastReviewDate) {
+                  return reviewer;
+                }
+                return latest;
+              }, null);
+              
+              console.log(`Multiple reviewers, last approver: ${lastApprover}`);
+              
+              return {
+                shouldNotify: true,
+                scenario: 'all-approved',
+                prNumber: prNumber,
+                pusher: pusher,
+                reviewerMentions: `@${lastApprover}`
+              };
+            }
 
-      - name: Notify other reviewers
-        if: fromJson(steps.check-reviewers.outputs.result).shouldNotify && fromJson(steps.check-reviewers.outputs.result).hasOtherReviewers
+      - name: Notify single reviewer who approved
+        if: fromJson(steps.check-reviewers.outputs.result).shouldNotify && fromJson(steps.check-reviewers.outputs.result).scenario == 'single-reviewer-approved'
         uses: peter-evans/create-or-update-comment@v4
         with:
           issue-number: ${{ fromJson(steps.check-reviewers.outputs.result).prNumber }}
@@ -76,8 +133,18 @@ jobs:
             
             ${{ fromJson(steps.check-reviewers.outputs.result).reviewerMentions }} - Please review the latest changes when you have a chance.
 
+      - name: Notify last approver (all approved)
+        if: fromJson(steps.check-reviewers.outputs.result).shouldNotify && fromJson(steps.check-reviewers.outputs.result).scenario == 'all-approved'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ fromJson(steps.check-reviewers.outputs.result).prNumber }}
+          body: |
+            Reviewer @${{ fromJson(steps.check-reviewers.outputs.result).pusher }} has pushed new changes to this PR.
+            
+            ${{ fromJson(steps.check-reviewers.outputs.result).reviewerMentions }} - Please review the latest changes again.
+
       - name: Notify designated person
-        if: fromJson(steps.check-reviewers.outputs.result).shouldNotify && !fromJson(steps.check-reviewers.outputs.result).hasOtherReviewers
+        if: fromJson(steps.check-reviewers.outputs.result).shouldNotify && fromJson(steps.check-reviewers.outputs.result).scenario == 'no-reviewers'
         uses: peter-evans/create-or-update-comment@v4
         with:
           issue-number: ${{ fromJson(steps.check-reviewers.outputs.result).prNumber }}
