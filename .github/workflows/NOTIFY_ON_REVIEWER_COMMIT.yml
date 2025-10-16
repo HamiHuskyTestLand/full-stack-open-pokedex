@@ -148,7 +148,7 @@ jobs:
           body: |
             Reviewer @${{ fromJson(steps.check-reviewers.outputs.result).pusher }} has pushed new changes to this PR.
             
-            All reviewers have approved. ${{ fromJson(steps.check-reviewers.outputs.result).reviewerMentions }} - Please review the latest changes again.
+            ${{ fromJson(steps.check-reviewers.outputs.result).reviewerMentions }} - Please review the latest changes again.
 
       - name: Notify designated person
         if: fromJson(steps.check-reviewers.outputs.result).shouldNotify && fromJson(steps.check-reviewers.outputs.result).scenario == 'no-reviewers'
@@ -158,4 +158,4 @@ jobs:
           body: |
             Reviewer @${{ fromJson(steps.check-reviewers.outputs.result).pusher }} has pushed changes, but no other reviewers are assigned.
             
-            @kreuz123 - Please assign additional reviewers or review this PR.
+            @kreuz123 - Please assign an additional reviewer.
