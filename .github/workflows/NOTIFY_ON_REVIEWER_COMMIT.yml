@@ -37,10 +37,9 @@ jobs:
               pull_number: prNumber
             });
             
-            // 過濾掉 bot reviewers（username 包含 [bot] 或 type 是 Bot）
             const humanReviewers = reviews
               .map(r => r.user)
-              .filter(user => user.type !== 'Bot'
+              .filter(user => user.type !== 'Bot')
               .map(user => user.login);
             
             const allReviewers = [...new Set([
@@ -81,7 +80,6 @@ jobs:
             
             reviews.forEach(review => {
               const reviewer = review.user.login;
-              // 只處理其他 reviewers 的 review
               if (otherReviewers.includes(reviewer)) {
                 const reviewDate = new Date(review.submitted_at);
                 
@@ -95,7 +93,6 @@ jobs:
             
             console.log('Reviewer Status:', JSON.stringify(reviewerStatus, null, 2));
             
-            // 檢查其他 reviewers 是否都 approved
             const allApproved = otherReviewers.every(r => reviewerStatus[r].approved);
             
             if (!allApproved) {
