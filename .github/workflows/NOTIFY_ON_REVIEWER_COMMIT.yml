@@ -27,9 +27,20 @@ jobs:
               .filter(r => r.type !== 'Bot')
               .map(r => r.login);
             
-            console.log(`Pusher: ${pusher}`);
-            console.log(`PR Author: ${prAuthor}`);
-            console.log(`Requested Reviewers (excluding bots): ${requestedReviewers.join(', ')}`);
+            const { data: timeline } = await github.rest.issues.listEventsForTimeline({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber
+            });
+            
+            const allEverRequestedReviewers = new Set(requestedReviewers);
+            timeline.forEach(event => {
+              if (event.event === 'review_requested' && event.requested_reviewer) {
+                if (event.requested_reviewer.type !== 'Bot') {
+                  allEverRequestedReviewers.add(event.requested_reviewer.login);
+                }
+              }
+            });
             
             const { data: reviews } = await github.rest.pulls.listReviews({
               owner: context.repo.owner,
@@ -37,31 +48,28 @@ jobs:
               pull_number: prNumber
             });
             
-            const humanReviewers = reviews
-              .map(r => r.user)
-              .filter(user => user.type !== 'Bot')
-              .map(user => user.login);
+            const latestReviewsByUser = reviews
+              .filter(review => review.user.type !== 'Bot')
+              .reduce((acc, review) => {
+                const reviewer = review.user.login;
+                
+                if (!acc[reviewer] || review.submitted_at > acc[reviewer].submitted_at) {
+                  acc[reviewer] = review;
+                }
+                return acc;
+              }, {});
             
-            const allReviewers = [...new Set([
-              ...requestedReviewers,
-              ...humanReviewers
-            ])];
-            
-            console.log(`All Reviewers (excluding bots): ${allReviewers.join(', ')}`);
+            const allReviewers = Array.from(allEverRequestedReviewers);
             
             const isPusherReviewer = allReviewers.includes(pusher) && pusher !== prAuthor;
             
             if (!isPusherReviewer) {
-              console.log('Pusher is not a reviewer, skipping notification');
               return { shouldNotify: false };
             }
-            
-            console.log('Pusher is a reviewer, checking for other reviewers...');
             
             const otherReviewers = allReviewers.filter(r => r !== pusher);
             
             if (otherReviewers.length === 0) {
-              console.log('No other reviewers, will notify designated person');
               return {
                 shouldNotify: true,
                 scenario: 'no-reviewers',
@@ -70,48 +78,32 @@ jobs:
               };
             }
             
-            console.log(`Other reviewers: ${otherReviewers.join(', ')}`);
-            
             const reviewerStatus = {};
             
             otherReviewers.forEach(reviewer => {
+              const latestReview = latestReviewsByUser[reviewer];
               const needsReview = requestedReviewers.includes(reviewer);
+              
               reviewerStatus[reviewer] = { 
-                approved: false, 
-                lastReviewDate: null,
-                needsReview: needsReview
+                approved: false,
+                changesRequested: false,
+                lastReviewDate: latestReview ? new Date(latestReview.submitted_at) : null
               };
-            });
-            
-            reviews.forEach(review => {
-              const reviewer = review.user.login;
-              if (otherReviewers.includes(reviewer)) {
-                const reviewDate = new Date(review.submitted_at);
-                
-                if (!reviewerStatus[reviewer].lastReviewDate || 
-                    reviewDate > reviewerStatus[reviewer].lastReviewDate) {
-                  reviewerStatus[reviewer].lastReviewDate = reviewDate;
-                  if (!reviewerStatus[reviewer].needsReview) {
-                    reviewerStatus[reviewer].approved = (review.state === 'APPROVED');
-                  }
-                }
+              
+              if (latestReview && !needsReview) {
+                reviewerStatus[reviewer].approved = (latestReview.state === 'APPROVED');
+                reviewerStatus[reviewer].changesRequested = (latestReview.state === 'CHANGES_REQUESTED');
               }
             });
             
-            console.log('Reviewer Status:', JSON.stringify(reviewerStatus, null, 2));
-            
+            const hasChangesRequested = otherReviewers.some(r => reviewerStatus[r].changesRequested);
             const allApproved = otherReviewers.every(r => reviewerStatus[r].approved);
             
-            if (!allApproved) {
-              const pendingReviewers = otherReviewers.filter(r => !reviewerStatus[r].approved);
-              console.log(`Not all reviewers approved. Pending: ${pendingReviewers.join(', ')}`);
+            if (!allApproved || hasChangesRequested) {
               return { shouldNotify: false };
             }
             
-            console.log('All reviewers approved');
-            
             if (otherReviewers.length === 1) {
-              console.log(`Single reviewer ${otherReviewers[0]}, will notify`);
               return {
                 shouldNotify: true,
                 scenario: 'single-reviewer-approved',
@@ -121,13 +113,13 @@ jobs:
               };
             } else {
               const lastApprover = otherReviewers.reduce((latest, reviewer) => {
-                if (!latest || reviewerStatus[reviewer].lastReviewDate > reviewerStatus[latest].lastReviewDate) {
+                if (!latest || 
+                    (reviewerStatus[reviewer].lastReviewDate && 
+                     reviewerStatus[reviewer].lastReviewDate > reviewerStatus[latest].lastReviewDate)) {
                   return reviewer;
                 }
                 return latest;
               }, null);
-              
-              console.log(`Multiple reviewers, last approver: ${lastApprover}`);
               
               return {
                 shouldNotify: true,
