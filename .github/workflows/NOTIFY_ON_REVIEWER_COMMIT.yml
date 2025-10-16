@@ -15,7 +15,6 @@ jobs:
       - name: Check and prepare notification
         id: check-reviewers
         uses: actions/github-script@v7
-
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -60,8 +59,7 @@ jobs:
                 shouldNotify: true,
                 scenario: 'no-reviewers',
                 prNumber: prNumber,
-                pusher: pusher,
-                designatedPerson: @kreuz123
+                pusher: pusher
               };
             }
             
@@ -141,7 +139,7 @@ jobs:
           body: |
             Reviewer @${{ fromJson(steps.check-reviewers.outputs.result).pusher }} has pushed new changes to this PR.
             
-            ${{ fromJson(steps.check-reviewers.outputs.result).reviewerMentions }} - Please review the latest changes again.
+            All reviewers have approved. ${{ fromJson(steps.check-reviewers.outputs.result).reviewerMentions }} - Please review the latest changes again.
 
       - name: Notify designated person
         if: fromJson(steps.check-reviewers.outputs.result).shouldNotify && fromJson(steps.check-reviewers.outputs.result).scenario == 'no-reviewers'
