@@ -22,40 +22,107 @@ jobs:
             const pr = context.payload.pull_request;
             const prAuthor = pr.user.login;
             const prNumber = pr.number;
+            
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            console.log('🔍 DEBUG INFO - START');
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            console.log('📌 Pusher:', pusher);
+            console.log('📌 PR Author:', prAuthor);
+            console.log('📌 PR Number:', prNumber);
+            console.log('📌 PR Title:', pr.title);
+            
             const requestedReviewers = (pr.requested_reviewers || [])
                 .filter(r => r.type !== 'Bot')
                 .map(r => r.login);
+            
+            console.log('\n👥 Currently Requested Reviewers:', requestedReviewers.length > 0 ? requestedReviewers : 'None');
+            
             const { data: timeline } = await github.rest.issues.listEventsForTimeline({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: prNumber
             });
+            
             const allEverRequestedReviewers = new Set(requestedReviewers);
+            console.log('\n📜 Timeline - Review Requests (first page only):');
+            let foundInTimeline = false;
             timeline.forEach(event => {
                 if (event.event === 'review_requested' && event.requested_reviewer) {
                     if (event.requested_reviewer.type !== 'Bot') {
                         allEverRequestedReviewers.add(event.requested_reviewer.login);
+                        console.log(`  - ${event.requested_reviewer.login}`);
+                        foundInTimeline = true;
                     }
                 }
             });
+            if (!foundInTimeline && requestedReviewers.length === 0) {
+                console.log('  (No review requests found in timeline)');
+            }
+            
+            console.log(`📊 Timeline events count: ${timeline.length}`);
+            if (timeline.length >= 30) {
+                console.log('⚠️  Warning: Timeline may have more pages (got 30+ events)');
+            }
+            
             const { data: reviews } = await github.rest.pulls.listReviews({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 pull_number: prNumber
             });
+            
+            console.log('\n📋 All Reviews:');
+            if (reviews.length === 0) {
+                console.log('  (No reviews yet)');
+            } else {
+                reviews.forEach((r, index) => {
+                    console.log(`  ${index + 1}. ${r.user.login} - ${r.state} (${r.submitted_at})`);
+                });
+            }
+            
             const latestReviewsByUser = reviews
                 .filter(review => review.user.type !== 'Bot')
                 .reduce((acc, review) => {
                     acc[review.user.login] = review;
                     return acc;
                 }, {});
+            
+            console.log('\n🔄 補充漏掉的 Reviewers (from reviews with APPROVED/CHANGES_REQUESTED):');
+            let addedCount = 0;
+            Object.keys(latestReviewsByUser).forEach(reviewer => {
+                const review = latestReviewsByUser[reviewer];
+                const wasAlreadyIncluded = allEverRequestedReviewers.has(reviewer);
+                
+                // 只加有正式 APPROVED 或 CHANGES_REQUESTED 的人
+                if (review.state === 'APPROVED' || review.state === 'CHANGES_REQUESTED') {
+                    allEverRequestedReviewers.add(reviewer);
+                    if (!wasAlreadyIncluded) {
+                        console.log(`  + Added ${reviewer} (${review.state})`);
+                        addedCount++;
+                    }
+                }
+            });
+            if (addedCount === 0) {
+                console.log('  (No additional reviewers added)');
+            }
+            
             const allReviewers = Array.from(allEverRequestedReviewers);
+            console.log('\n👥 All Reviewers (final list):', allReviewers.length > 0 ? allReviewers : 'None');
+            
             const isPusherReviewer = allReviewers.includes(pusher) && pusher !== prAuthor;
+            console.log('\n✅ Is Pusher a Reviewer (and not PR author)?', isPusherReviewer);
+            
             if (!isPusherReviewer) {
+                console.log('❌ EXIT: Pusher is not a reviewer or is the PR author');
+                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
                 return { shouldNotify: false };
             }
+            
             const otherReviewers = allReviewers.filter(r => r !== pusher);
+            console.log('\n👥 Other Reviewers (excluding pusher):', otherReviewers.length > 0 ? otherReviewers : 'None');
+            
             if (otherReviewers.length === 0) {
+                console.log('✅ Scenario: NO_REVIEWERS - will notify @kreuz123');
+                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
                 return {
                     shouldNotify: true,
                     scenario: 'no-reviewers',
@@ -63,7 +130,9 @@ jobs:
                     pusher: pusher
                 };
             }
+            
             const reviewerStatus = {};
+            console.log('\n📊 Reviewer Status Details:');
             otherReviewers.forEach(reviewer => {
                 const latestReview = latestReviewsByUser[reviewer];
                 const needsReview = requestedReviewers.includes(reviewer);
@@ -76,58 +145,7 @@ jobs:
                     reviewerStatus[reviewer].approved = (latestReview.state === 'APPROVED');
                     reviewerStatus[reviewer].changesRequested = (latestReview.state === 'CHANGES_REQUESTED');
                 }
-            });
-            const hasChangesRequested = otherReviewers.some(r => reviewerStatus[r].changesRequested);
-            const allApproved = otherReviewers.every(r => reviewerStatus[r].approved);
-            if (!allApproved || hasChangesRequested) {
-                return { shouldNotify: false };
-            }
-            if (otherReviewers.length === 1) {
-                return {
-                    shouldNotify: true,
-                    scenario: 'single-reviewer-approved',
-                    prNumber: prNumber,
-                    pusher: pusher,
-                    reviewerMentions: `@${otherReviewers[0]}`
-                };
-            } else {
-                const lastApprover = otherReviewers.reduce((latest, reviewer) => {
-                    if (!latest ||
-                        (reviewerStatus[reviewer].lastReviewDate &&
-                         reviewerStatus[reviewer].lastReviewDate > reviewerStatus[latest].lastReviewDate)) {
-                        return reviewer;
-                    }
-                    return latest;
-                }, null);
-                return {
-                    shouldNotify: true,
-                    scenario: 'all-approved',
-                    prNumber: prNumber,
-                    pusher: pusher,
-                    reviewerMentions: `@${lastApprover}`
-                };
-            }
-      - name: Notify single reviewer who approved
-        if: fromJson(steps.check-reviewers.outputs.result).shouldNotify && fromJson(steps.check-reviewers.outputs.result).scenario == 'single-reviewer-approved'
-        uses: peter-evans/create-or-update-comment@v4
-        with:
-          issue-number: ${{ fromJson(steps.check-reviewers.outputs.result).prNumber }}
-          body: |
-            Reviewer @${{ fromJson(steps.check-reviewers.outputs.result).pusher }} has pushed new changes to this PR.
-            ${{ fromJson(steps.check-reviewers.outputs.result).reviewerMentions }} - Please review the latest changes when you have a chance.
-      - name: Notify last approver
-        if: fromJson(steps.check-reviewers.outputs.result).shouldNotify && fromJson(steps.check-reviewers.outputs.result).scenario == 'all-approved'
-        uses: peter-evans/create-or-update-comment@v4
-        with:
-          issue-number: ${{ fromJson(steps.check-reviewers.outputs.result).prNumber }}
-          body: |
-            Reviewer @${{ fromJson(steps.check-reviewers.outputs.result).pusher }} has pushed new changes to this PR.
-            ${{ fromJson(steps.check-reviewers.outputs.result).reviewerMentions }} - Please review the latest changes again.
-      - name: Notify designated person
-        if: fromJson(steps.check-reviewers.outputs.result).shouldNotify && fromJson(steps.check-reviewers.outputs.result).scenario == 'no-reviewers'
-        uses: peter-evans/create-or-update-comment@v4
-        with:
-          issue-number: ${{ fromJson(steps.check-reviewers.outputs.result).prNumber }}
-          body: |
-            Reviewer @${{ fromJson(steps.check-reviewers.outputs.result).pusher }} has pushed changes, but no other reviewers are assigned.
-            @kreuz123 - Please assign an additional reviewer.
+                
+                console.log(`  👤 ${reviewer}:`);
+                console.log(`     - Has reviewed: ${latestReview ? 'Yes' : 'No'}`);
+                console.log(`     - Latest review state: ${latestReview?.
