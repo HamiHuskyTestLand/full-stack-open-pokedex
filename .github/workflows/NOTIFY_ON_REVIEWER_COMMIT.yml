@@ -178,4 +178,31 @@ jobs:
             }
             
       - name: Notify single reviewer who approved
-        if: fromJson(steps.check-reviewers.outputs.result
+        if: fromJson(steps.check-reviewers.outputs.result).shouldNotify && fromJson(steps.check-reviewers.outputs.result).scenario == 'single-reviewer-approved'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ fromJson(steps.check-reviewers.outputs.result).prNumber }}
+          body: |
+            Reviewer @${{ fromJson(steps.check-reviewers.outputs.result).pusher }} has pushed new changes to this PR.
+            
+            ${{ fromJson(steps.check-reviewers.outputs.result).reviewerMentions }} - Please review the latest changes when you have a chance.
+            
+      - name: Notify last approver
+        if: fromJson(steps.check-reviewers.outputs.result).shouldNotify && fromJson(steps.check-reviewers.outputs.result).scenario == 'all-approved'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ fromJson(steps.check-reviewers.outputs.result).prNumber }}
+          body: |
+            Reviewer @${{ fromJson(steps.check-reviewers.outputs.result).pusher }} has pushed new changes to this PR.
+            
+            ${{ fromJson(steps.check-reviewers.outputs.result).reviewerMentions }} - Please review the latest changes again.
+            
+      - name: Notify designated person
+        if: fromJson(steps.check-reviewers.outputs.result).shouldNotify && fromJson(steps.check-reviewers.outputs.result).scenario == 'no-reviewers'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ fromJson(steps.check-reviewers.outputs.result).prNumber }}
+          body: |
+            Reviewer @${{ fromJson(steps.check-reviewers.outputs.result).pusher }} has pushed changes, but no other reviewers are assigned.
+            
+            @kreuz123 - Please assign an additional reviewer.
