@@ -23,30 +23,45 @@ jobs:
             const prAuthor = pr.user.login;
             const prNumber = pr.number;
             
+            console.log('=== Step 1: Get requested reviewers ===');
             const requestedReviewers = (pr.requested_reviewers || [])
                 .filter(r => r.type !== 'Bot')
                 .map(r => r.login);
+            console.log('Requested Reviewers (current):', requestedReviewers);
             
+            console.log('\n=== Step 2: Get timeline ===');
             const { data: timeline } = await github.rest.issues.listEventsForTimeline({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: prNumber
             });
+            console.log('Timeline events count:', timeline.length);
             
             const allEverRequestedReviewers = new Set(requestedReviewers);
+            console.log('Initial set from requestedReviewers:', Array.from(allEverRequestedReviewers));
+            
             timeline.forEach(event => {
                 if (event.event === 'review_requested' && event.requested_reviewer) {
                     if (event.requested_reviewer.type !== 'Bot') {
+                        console.log('Found review_requested event for:', event.requested_reviewer.login);
                         allEverRequestedReviewers.add(event.requested_reviewer.login);
                     }
                 }
             });
+            console.log('After processing timeline:', Array.from(allEverRequestedReviewers));
             
+            console.log('\n=== Step 3: Get reviews ===');
             const { data: reviews } = await github.rest.pulls.listReviews({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 pull_number: prNumber
             });
+            console.log('Total reviews count:', reviews.length);
+            console.log('All reviews:', reviews.map(r => ({ 
+                user: r.user.login, 
+                state: r.state,
+                submitted_at: r.submitted_at 
+            })));
             
             const latestReviewsByUser = reviews
                 .filter(review => review.user.type !== 'Bot')
@@ -55,23 +70,35 @@ jobs:
                     return acc;
                 }, {});
             
+            console.log('Latest reviews by user:', Object.keys(latestReviewsByUser));
+            
+            console.log('\n=== Step 4: Combine reviewers ===');
+            console.log('Before adding reviews:', Array.from(allEverRequestedReviewers));
+            
+            // 🎯 把所有曾經 review 過的人也加入
+            Object.keys(latestReviewsByUser).forEach(reviewer => {
+                console.log('Adding reviewer from reviews:', reviewer);
+                allEverRequestedReviewers.add(reviewer);
+            });
+            
+            console.log('After adding reviews:', Array.from(allEverRequestedReviewers));
+            
             const allReviewers = Array.from(allEverRequestedReviewers);
             const isPusherReviewer = allReviewers.includes(pusher) && pusher !== prAuthor;
+            
+            console.log('\n=== Summary ===');
+            console.log('PR Number:', prNumber);
+            console.log('Pusher:', pusher);
+            console.log('PR Author:', prAuthor);
+            console.log('All Reviewers:', allReviewers);
+            console.log('Is Pusher Reviewer:', isPusherReviewer);
             
             if (!isPusherReviewer) {
                 return { shouldNotify: false };
             }
             
             const otherReviewers = allReviewers.filter(r => r !== pusher);
-            
-            // 🔍 Debug: 列出所有資訊
-            console.log('=== Debug Info ===');
-            console.log('PR Number:', prNumber);
-            console.log('Pusher:', pusher);
-            console.log('PR Author:', prAuthor);
-            console.log('All Reviewers:', allReviewers);
             console.log('Other Reviewers:', otherReviewers);
-            console.log('Requested Reviewers:', requestedReviewers);
             
             if (otherReviewers.length === 0) {
                 return {
@@ -82,6 +109,7 @@ jobs:
                 };
             }
             
+            console.log('\n=== Checking reviewer status ===');
             const reviewerStatus = {};
             
             otherReviewers.forEach(reviewer => {
@@ -97,16 +125,17 @@ jobs:
                     reviewerStatus[reviewer].approved = (latestReview.state === 'APPROVED');
                 }
                 
-                // 🔍 Debug: 每個 reviewer 的狀態
-                console.log(`Reviewer: ${reviewer}`);
+                console.log(`\nReviewer: ${reviewer}`);
                 console.log(`  - Has review: ${!!latestReview}`);
                 console.log(`  - Review state: ${latestReview?.state || 'N/A'}`);
                 console.log(`  - Needs re-review: ${needsReview}`);
                 console.log(`  - Approved: ${reviewerStatus[reviewer].approved}`);
+                console.log(`  - Last review date: ${reviewerStatus[reviewer].lastReviewDate}`);
             });
             
             const allApproved = otherReviewers.every(r => reviewerStatus[r].approved);
             
+            console.log('\n=== Final Decision ===');
             console.log('All Approved:', allApproved);
             
             if (!allApproved) {
