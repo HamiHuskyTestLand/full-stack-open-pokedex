@@ -11,8 +11,8 @@ jobs:
   notify-stale-reviewer:
     runs-on: ubuntu-latest
     steps:
-      - name: Check if pusher is a reviewer
-        id: check-pusher
+      - name: Find current approvers
+        id: find-approvers
         uses: actions/github-script@v7
         with:
           script: |
@@ -21,11 +21,14 @@ jobs:
             const prAuthor = context.payload.pull_request.user.login;
             const requestedReviewers = context.payload.pull_request.requested_reviewers.map(r => r.login);
 
-            const { data: timeline } = await github.rest.issues.listEventsForTimeline({
+            console.log('Fetching timeline events...');
+            const timeline = await github.paginate(github.rest.issues.listEventsForTimeline, {
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: prNumber
+                issue_number: prNumber,
+                per_page: 100
             });
+            console.log(`Fetched ${timeline.length} timeline events`);
 
             const allEverRequestedReviewers = new Set(requestedReviewers);
             timeline.forEach(event => {
@@ -33,54 +36,38 @@ jobs:
                     allEverRequestedReviewers.add(event.requested_reviewer.login);
                 }
             });
+            console.log(`All requested reviewers: ${[...allEverRequestedReviewers].join(', ')}`);
 
             const isPusherReviewer = allEverRequestedReviewers.has(pusher) && pusher !== prAuthor;
-            
             if (isPusherReviewer) {
-                console.log(`${pusher} is a reviewer. Skipping this workflow (handled by "Notify on Reviewer Commit").`);
-                return { shouldContinue: false };
+                console.log(`${pusher} is a reviewer. Skipping (handled by "Notify on Reviewer Commit").`);
+                return { hasApprovals: false };
             }
-            
-            return { shouldContinue: true };
-      
-      - name: Find current approvers
-        id: find-approvers
-        if: fromJson(steps.check-pusher.outputs.result).shouldContinue
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const prNumber = context.payload.pull_request.number;
-            const requestedReviewers = context.payload.pull_request.requested_reviewers.map(r => r.login);
 
-            const { data: timeline } = await github.rest.issues.listEventsForTimeline({
+            console.log('Fetching all reviews...');
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: prNumber
+                pull_number: prNumber,
+                per_page: 100
             });
-
-            const allEverRequestedReviewers = new Set(requestedReviewers);
-            timeline.forEach(event => {
-                if (event.event === 'review_requested' && event.requested_reviewer) {
-                    allEverRequestedReviewers.add(event.requested_reviewer.login);
-                }
-            });
-
-            const { data: reviews } = await github.rest.pulls.listReviews({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: prNumber
-            });
+            console.log(`Fetched ${reviews.length} reviews`);
 
             const latestReviewsByUser = reviews.reduce((acc, review) => {
-                acc[review.user.login] = review;
+                const login = review.user.login;
+                if (!acc[login] || new Date(review.submitted_at) > new Date(acc[login].submitted_at)) {
+                    acc[login] = review;
+                }
                 return acc;
             }, {});
 
             const reviewerOnlyReviews = Object.values(latestReviewsByUser)
                 .filter(review =>
-                    !review.user.login.endsWith('[bot]')
-                    && allEverRequestedReviewers.has(review.user.login)
+                    !review.user.login.endsWith('[bot]') &&
+                    allEverRequestedReviewers.has(review.user.login)
                 );
+
+            console.log(`Reviewer reviews count: ${reviewerOnlyReviews.length}`);
 
             const currentApprovers = reviewerOnlyReviews
                 .filter(review => review.state === 'APPROVED')
@@ -89,23 +76,38 @@ jobs:
             const hasChangesRequested = reviewerOnlyReviews.some(review =>
                 review.state === 'CHANGES_REQUESTED'
             );
+
             const hasOnlyCommented = reviewerOnlyReviews.some(review =>
                 review.state === 'COMMENTED'
             );
+
             const hasPendingHumanReviewers = requestedReviewers.some(reviewer =>
                 !reviewer.endsWith('[bot]')
             );
+
+            console.log(`Approvers: ${currentApprovers.length}`);
+            console.log(`Has changes requested: ${hasChangesRequested}`);
+            console.log(`Has only commented: ${hasOnlyCommented}`);
+            console.log(`Has pending reviewers: ${hasPendingHumanReviewers}`);
 
             const allReviewersApproved = currentApprovers.length > 0
                 && !hasPendingHumanReviewers
                 && !hasChangesRequested
                 && !hasOnlyCommented;
 
-            return allReviewersApproved ? {
+            if (!allReviewersApproved) {
+                console.log('Not all reviewers approved. Workflow complete.');
+                return { hasApprovals: false };
+            }
+
+            const mostRecentApprover = currentApprovers[0].user.login;
+            console.log(`✅ All reviewers approved! Notifying: ${mostRecentApprover}`);
+
+            return {
                 hasApprovals: true,
                 prNumber,
-                mostRecentApprover: currentApprovers[0].user.login
-            } : { hasApprovals: false };
+                mostRecentApprover
+            };
 
       - name: Comment on PR to notify stale reviewers
         if: fromJson(steps.find-approvers.outputs.result).hasApprovals
