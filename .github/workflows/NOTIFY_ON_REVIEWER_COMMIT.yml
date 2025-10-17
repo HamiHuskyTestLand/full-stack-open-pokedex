@@ -22,14 +22,17 @@ jobs:
             const pr = context.payload.pull_request;
             const prAuthor = pr.user.login;
             const prNumber = pr.number;
+            
             const requestedReviewers = (pr.requested_reviewers || [])
                 .filter(r => r.type !== 'Bot')
                 .map(r => r.login);
+            
             const { data: timeline } = await github.rest.issues.listEventsForTimeline({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: prNumber
             });
+            
             const allEverRequestedReviewers = new Set(requestedReviewers);
             timeline.forEach(event => {
                 if (event.event === 'review_requested' && event.requested_reviewer) {
@@ -38,23 +41,38 @@ jobs:
                     }
                 }
             });
+            
             const { data: reviews } = await github.rest.pulls.listReviews({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 pull_number: prNumber
             });
+            
             const latestReviewsByUser = reviews
                 .filter(review => review.user.type !== 'Bot')
                 .reduce((acc, review) => {
                     acc[review.user.login] = review;
                     return acc;
                 }, {});
+            
             const allReviewers = Array.from(allEverRequestedReviewers);
             const isPusherReviewer = allReviewers.includes(pusher) && pusher !== prAuthor;
+            
             if (!isPusherReviewer) {
                 return { shouldNotify: false };
             }
+            
             const otherReviewers = allReviewers.filter(r => r !== pusher);
+            
+            // 🔍 Debug: 列出所有資訊
+            console.log('=== Debug Info ===');
+            console.log('PR Number:', prNumber);
+            console.log('Pusher:', pusher);
+            console.log('PR Author:', prAuthor);
+            console.log('All Reviewers:', allReviewers);
+            console.log('Other Reviewers:', otherReviewers);
+            console.log('Requested Reviewers:', requestedReviewers);
+            
             if (otherReviewers.length === 0) {
                 return {
                     shouldNotify: true,
@@ -63,23 +81,40 @@ jobs:
                     pusher: pusher
                 };
             }
+            
             const reviewerStatus = {};
+            
             otherReviewers.forEach(reviewer => {
                 const latestReview = latestReviewsByUser[reviewer];
                 const needsReview = requestedReviewers.includes(reviewer);
+                
                 reviewerStatus[reviewer] = {
                     approved: false,
                     lastReviewDate: latestReview ? new Date(latestReview.submitted_at) : null
                 };
+                
                 if (latestReview && !needsReview) {
                     reviewerStatus[reviewer].approved = (latestReview.state === 'APPROVED');
                 }
+                
+                // 🔍 Debug: 每個 reviewer 的狀態
+                console.log(`Reviewer: ${reviewer}`);
+                console.log(`  - Has review: ${!!latestReview}`);
+                console.log(`  - Review state: ${latestReview?.state || 'N/A'}`);
+                console.log(`  - Needs re-review: ${needsReview}`);
+                console.log(`  - Approved: ${reviewerStatus[reviewer].approved}`);
             });
+            
             const allApproved = otherReviewers.every(r => reviewerStatus[r].approved);
+            
+            console.log('All Approved:', allApproved);
+            
             if (!allApproved) {
                 return { shouldNotify: false };
             }
+            
             if (otherReviewers.length === 1) {
+                console.log('Scenario: single-reviewer-approved');
                 return {
                     shouldNotify: true,
                     scenario: 'single-reviewer-approved',
@@ -96,6 +131,10 @@ jobs:
                     }
                     return latest;
                 }, null);
+                
+                console.log('Scenario: all-approved');
+                console.log('Last Approver:', lastApprover);
+                
                 return {
                     shouldNotify: true,
                     scenario: 'all-approved',
@@ -104,6 +143,7 @@ jobs:
                     reviewerMentions: `@${lastApprover}`
                 };
             }
+
       - name: Notify single reviewer who approved
         if: fromJson(steps.check-reviewers.outputs.result).shouldNotify && fromJson(steps.check-reviewers.outputs.result).scenario == 'single-reviewer-approved'
         uses: peter-evans/create-or-update-comment@v4
@@ -111,7 +151,9 @@ jobs:
           issue-number: ${{ fromJson(steps.check-reviewers.outputs.result).prNumber }}
           body: |
             Reviewer @${{ fromJson(steps.check-reviewers.outputs.result).pusher }} has pushed new changes to this PR.
+            
             ${{ fromJson(steps.check-reviewers.outputs.result).reviewerMentions }} - Please review the latest changes when you have a chance.
+
       - name: Notify last approver
         if: fromJson(steps.check-reviewers.outputs.result).shouldNotify && fromJson(steps.check-reviewers.outputs.result).scenario == 'all-approved'
         uses: peter-evans/create-or-update-comment@v4
@@ -119,7 +161,9 @@ jobs:
           issue-number: ${{ fromJson(steps.check-reviewers.outputs.result).prNumber }}
           body: |
             Reviewer @${{ fromJson(steps.check-reviewers.outputs.result).pusher }} has pushed new changes to this PR.
-            ${{ fromJson(steps.check-reviewers.outputs.result).reviewerMentions }} - Please review the latest changes again.
+            
+            All reviewers have approved. ${{ fromJson(steps.check-reviewers.outputs.result).reviewerMentions }} - Please review the latest changes again.
+
       - name: Notify designated person
         if: fromJson(steps.check-reviewers.outputs.result).shouldNotify && fromJson(steps.check-reviewers.outputs.result).scenario == 'no-reviewers'
         uses: peter-evans/create-or-update-comment@v4
@@ -127,4 +171,5 @@ jobs:
           issue-number: ${{ fromJson(steps.check-reviewers.outputs.result).prNumber }}
           body: |
             Reviewer @${{ fromJson(steps.check-reviewers.outputs.result).pusher }} has pushed changes, but no other reviewers are assigned.
+            
             @kreuz123 - Please assign an additional reviewer.
