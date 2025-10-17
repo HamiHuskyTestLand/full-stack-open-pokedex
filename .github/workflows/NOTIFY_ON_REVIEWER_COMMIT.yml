@@ -121,7 +121,7 @@ jobs:
           body: |
             Reviewer @${{ fromJson(steps.check-reviewers.outputs.result).pusher }} has pushed new changes to this PR.
             
-            All reviewers have approved. ${{ fromJson(steps.check-reviewers.outputs.result).reviewerMentions }} - Please review the latest changes again.
+            ${{ fromJson(steps.check-reviewers.outputs.result).reviewerMentions }} - Please review the latest changes again.
       - name: Notify designated person
         if: fromJson(steps.check-reviewers.outputs.result).shouldNotify && fromJson(steps.check-reviewers.outputs.result).scenario == 'no-reviewers'
         uses: peter-evans/create-or-update-comment@v4
