@@ -11,67 +11,100 @@ jobs:
   notify-stale-reviewer:
     runs-on: ubuntu-latest
     steps:
+      - name: Check if pusher is a reviewer
+        id: check-pusher
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pusher = context.payload.sender.login;
+            const prNumber = context.payload.pull_request.number;
+            const prAuthor = context.payload.pull_request.user.login;
+            const requestedReviewers = context.payload.pull_request.requested_reviewers.map(r => r.login);
+
+            const { data: timeline } = await github.rest.issues.listEventsForTimeline({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber
+            });
+
+            const allEverRequestedReviewers = new Set(requestedReviewers);
+            timeline.forEach(event => {
+                if (event.event === 'review_requested' && event.requested_reviewer) {
+                    allEverRequestedReviewers.add(event.requested_reviewer.login);
+                }
+            });
+
+            const isPusherReviewer = allEverRequestedReviewers.has(pusher) && pusher !== prAuthor;
+            
+            if (isPusherReviewer) {
+                console.log(`${pusher} is a reviewer. Skipping this workflow (handled by "Notify on Reviewer Commit").`);
+                return { shouldContinue: false };
+            }
+            
+            return { shouldContinue: true };
+      
       - name: Find current approvers
         id: find-approvers
+        if: fromJson(steps.check-pusher.outputs.result).shouldContinue
         uses: actions/github-script@v7
         with:
           script: |
             const prNumber = context.payload.pull_request.number;
             const requestedReviewers = context.payload.pull_request.requested_reviewers.map(r => r.login);
-            
-            // Get timeline to find who was ever requested as reviewer
+
             const { data: timeline } = await github.rest.issues.listEventsForTimeline({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: prNumber
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber
             });
-            
-            // Find all users who were ever requested for review
+
             const allEverRequestedReviewers = new Set(requestedReviewers);
             timeline.forEach(event => {
-              if (event.event === 'review_requested' && event.requested_reviewer) {
-                allEverRequestedReviewers.add(event.requested_reviewer.login);
-              }
+                if (event.event === 'review_requested' && event.requested_reviewer) {
+                    allEverRequestedReviewers.add(event.requested_reviewer.login);
+                }
             });
-            
+
             const { data: reviews } = await github.rest.pulls.listReviews({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: prNumber
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber
             });
-            
-            // Get latest review per user
+
             const latestReviewsByUser = reviews.reduce((acc, review) => {
-              acc[review.user.login] = review;
-              return acc;
+                acc[review.user.login] = review;
+                return acc;
             }, {});
-            
-            // Only check reviews from actual reviewers
+
             const reviewerOnlyReviews = Object.values(latestReviewsByUser)
-              .filter(review => 
-                !review.user.login.endsWith('[bot]') &&
-                allEverRequestedReviewers.has(review.user.login)
-              );
-            
-            // Find current approvers
+                .filter(review =>
+                    !review.user.login.endsWith('[bot]')
+                    && allEverRequestedReviewers.has(review.user.login)
+                );
+
             const currentApprovers = reviewerOnlyReviews
-              .filter(review => review.state === 'APPROVED')
-              .sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
-            
-            // Check for blocking conditions
-            const hasChangesRequested = reviewerOnlyReviews.some(review => review.state === 'CHANGES_REQUESTED');
-            const hasOnlyCommented = reviewerOnlyReviews.some(review => review.state === 'COMMENTED');
-            const hasPendingHumanReviewers = requestedReviewers.some(reviewer => !reviewer.endsWith('[bot]'));
-            
-            const allReviewersApproved = currentApprovers.length > 0 && 
-                                       !hasPendingHumanReviewers && 
-                                       !hasChangesRequested &&
-                                       !hasOnlyCommented;
-            
+                .filter(review => review.state === 'APPROVED')
+                .sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
+
+            const hasChangesRequested = reviewerOnlyReviews.some(review =>
+                review.state === 'CHANGES_REQUESTED'
+            );
+            const hasOnlyCommented = reviewerOnlyReviews.some(review =>
+                review.state === 'COMMENTED'
+            );
+            const hasPendingHumanReviewers = requestedReviewers.some(reviewer =>
+                !reviewer.endsWith('[bot]')
+            );
+
+            const allReviewersApproved = currentApprovers.length > 0
+                && !hasPendingHumanReviewers
+                && !hasChangesRequested
+                && !hasOnlyCommented;
+
             return allReviewersApproved ? {
-              hasApprovals: true,
-              prNumber,
-              mostRecentApprover: currentApprovers[0].user.login
+                hasApprovals: true,
+                prNumber,
+                mostRecentApprover: currentApprovers[0].user.login
             } : { hasApprovals: false };
 
       - name: Comment on PR to notify stale reviewers
