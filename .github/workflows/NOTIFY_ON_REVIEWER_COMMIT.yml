@@ -37,16 +37,32 @@ jobs:
             
             console.log('\n👥 Currently Requested Reviewers:', requestedReviewers.length > 0 ? requestedReviewers : 'None');
             
-            const { data: timeline } = await github.rest.issues.listEventsForTimeline({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: prNumber
-            });
+            // 獲取所有 timeline 事件（處理分頁）
+            console.log('\n📜 Fetching all Timeline events (with pagination)...');
+            const allTimelineEvents = [];
+            let pageCount = 0;
+            
+            for await (const response of github.paginate.iterator(
+                github.rest.issues.listEventsForTimeline,
+                {
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: prNumber,
+                    per_page: 100
+                }
+            )) {
+                pageCount++;
+                allTimelineEvents.push(...response.data);
+                console.log(`  Page ${pageCount}: ${response.data.length} events`);
+            }
+            
+            console.log(`✅ Total timeline events fetched: ${allTimelineEvents.length} (from ${pageCount} page(s))`);
             
             const allEverRequestedReviewers = new Set(requestedReviewers);
-            console.log('\n📜 Timeline - Review Requests (first page only):');
+            console.log('\n📋 Review Requests from Timeline:');
             let foundInTimeline = false;
-            timeline.forEach(event => {
+            
+            allTimelineEvents.forEach(event => {
                 if (event.event === 'review_requested' && event.requested_reviewer) {
                     if (event.requested_reviewer.type !== 'Bot') {
                         allEverRequestedReviewers.add(event.requested_reviewer.login);
@@ -55,13 +71,9 @@ jobs:
                     }
                 }
             });
+            
             if (!foundInTimeline && requestedReviewers.length === 0) {
                 console.log('  (No review requests found in timeline)');
-            }
-            
-            console.log(`📊 Timeline events count: ${timeline.length}`);
-            if (timeline.length >= 30) {
-                console.log('⚠️  Warning: Timeline may have more pages (got 30+ events)');
             }
             
             const { data: reviews } = await github.rest.pulls.listReviews({
@@ -86,27 +98,8 @@ jobs:
                     return acc;
                 }, {});
             
-            console.log('\n🔄 補充漏掉的 Reviewers (from reviews with APPROVED/CHANGES_REQUESTED):');
-            let addedCount = 0;
-            Object.keys(latestReviewsByUser).forEach(reviewer => {
-                const review = latestReviewsByUser[reviewer];
-                const wasAlreadyIncluded = allEverRequestedReviewers.has(reviewer);
-                
-                // 只加有正式 APPROVED 或 CHANGES_REQUESTED 的人
-                if (review.state === 'APPROVED' || review.state === 'CHANGES_REQUESTED') {
-                    allEverRequestedReviewers.add(reviewer);
-                    if (!wasAlreadyIncluded) {
-                        console.log(`  + Added ${reviewer} (${review.state})`);
-                        addedCount++;
-                    }
-                }
-            });
-            if (addedCount === 0) {
-                console.log('  (No additional reviewers added)');
-            }
-            
             const allReviewers = Array.from(allEverRequestedReviewers);
-            console.log('\n👥 All Reviewers (final list):', allReviewers.length > 0 ? allReviewers : 'None');
+            console.log('\n👥 All Reviewers (from timeline):', allReviewers.length > 0 ? allReviewers : 'None');
             
             const isPusherReviewer = allReviewers.includes(pusher) && pusher !== prAuthor;
             console.log('\n✅ Is Pusher a Reviewer (and not PR author)?', isPusherReviewer);
@@ -138,12 +131,10 @@ jobs:
                 const needsReview = requestedReviewers.includes(reviewer);
                 reviewerStatus[reviewer] = {
                     approved: false,
-                    changesRequested: false,
                     lastReviewDate: latestReview ? new Date(latestReview.submitted_at) : null
                 };
                 if (latestReview && !needsReview) {
                     reviewerStatus[reviewer].approved = (latestReview.state === 'APPROVED');
-                    reviewerStatus[reviewer].changesRequested = (latestReview.state === 'CHANGES_REQUESTED');
                 }
                 
                 console.log(`  👤 ${reviewer}:`);
@@ -151,31 +142,19 @@ jobs:
                 console.log(`     - Latest review state: ${latestReview?.state || 'NO_REVIEW'}`);
                 console.log(`     - Still needs review: ${needsReview ? 'Yes' : 'No'}`);
                 console.log(`     - Counted as approved: ${reviewerStatus[reviewer].approved ? '✅ Yes' : '❌ No'}`);
-                console.log(`     - Requested changes: ${reviewerStatus[reviewer].changesRequested ? '⚠️ Yes' : 'No'}`);
                 if (latestReview) {
                     console.log(`     - Last review date: ${latestReview.submitted_at}`);
                 }
             });
             
-            const hasChangesRequested = otherReviewers.some(r => reviewerStatus[r].changesRequested);
             const allApproved = otherReviewers.every(r => reviewerStatus[r].approved);
-            
             console.log(`\n🎯 All Other Reviewers Approved? ${allApproved ? '✅ Yes' : '❌ No'}`);
-            console.log(`⚠️  Any Changes Requested? ${hasChangesRequested ? '❌ Yes' : '✅ No'}`);
             
-            if (!allApproved || hasChangesRequested) {
-                console.log('❌ EXIT: Not all reviewers have approved OR someone requested changes');
-                
-                if (!allApproved) {
-                    const notApprovedReviewers = otherReviewers.filter(r => !reviewerStatus[r].approved);
-                    console.log('   Not approved reviewers:', notApprovedReviewers.join(', '));
-                }
-                
-                if (hasChangesRequested) {
-                    const changesRequestedBy = otherReviewers.filter(r => reviewerStatus[r].changesRequested);
-                    console.log('   Changes requested by:', changesRequestedBy.join(', '));
-                }
-                
+            if (!allApproved) {
+                const notApprovedReviewers = otherReviewers.filter(r => !reviewerStatus[r].approved);
+                console.log('❌ EXIT: Not all reviewers have approved');
+                console.log('   Not approved reviewers:', notApprovedReviewers.join(', '));
+                console.log('   Reasons could be: CHANGES_REQUESTED, COMMENTED, or no review yet');
                 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
                 return { shouldNotify: false };
             }
