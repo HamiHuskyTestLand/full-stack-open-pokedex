@@ -18,126 +18,168 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const pusher = context.payload.sender.login;
-            const pr = context.payload.pull_request;
-            const prAuthor = pr.user.login;
-            const prNumber = pr.number;
-            
-            const requestedReviewers = (pr.requested_reviewers || [])
-                .filter(r => r.type !== 'Bot')
-                .map(r => r.login);
-            
-            const allTimelineEvents = [];
-            
-            for await (const response of github.paginate.iterator(
-                github.rest.issues.listEventsForTimeline,
-                {
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    issue_number: prNumber,
-                    per_page: 100
-                }
-            )) {
-                allTimelineEvents.push(...response.data);
+            // ===== BEGIN: Script purpose =====
+            // This script determines whether to post a comment notifying
+            // a reviewer when the PR's pusher is also one of the reviewers.
+            // It:
+            //  - collects requested reviewers (current + historical via timeline)
+            //  - collects all reviews (paginated)
+            //  - builds latest review per user and determines approval state
+            //  - decides whether to notify and who to mention
+            // All logs below are for debugging and traceability.
+            // ===== END: Script purpose =====
+
+            try {
+              // Basic context info
+              const pusher = context.payload.sender.login;
+              const pr = context.payload.pull_request;
+              const prAuthor = pr.user.login;
+              const prNumber = pr.number;
+              console.log(`Starting check-reviewers for PR #${prNumber}. Pusher: ${pusher}, PR author: ${prAuthor}`);
+
+              // Get currently requested reviewers from PR header, excluding bots
+              const requestedReviewers = (pr.requested_reviewers || [])
+                  .filter(r => r.type !== 'Bot')
+                  .map(r => r.login);
+              console.log(`Requested reviewers (header): ${JSON.stringify(requestedReviewers)}`);
+
+              // Fetch the full timeline (paginated) to capture historical review_requested events.
+              const allTimelineEvents = [];
+              for await (const response of github.paginate.iterator(
+                  github.rest.issues.listEventsForTimeline,
+                  {
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      issue_number: prNumber,
+                      per_page: 100
+                  }
+              )) {
+                  allTimelineEvents.push(...response.data);
+              }
+              console.log(`Fetched timeline events: ${allTimelineEvents.length}`);
+
+              // Build a set of all users who were ever requested as reviewers (current + historical),
+              // excluding bots.
+              const allEverRequestedReviewers = new Set(requestedReviewers);
+              allTimelineEvents.forEach(event => {
+                  if (event.event === 'review_requested' && event.requested_reviewer) {
+                      if (event.requested_reviewer.type !== 'Bot') {
+                          allEverRequestedReviewers.add(event.requested_reviewer.login);
+                      }
+                  }
+              });
+              console.log(`All ever requested reviewers (after timeline merge): ${JSON.stringify(Array.from(allEverRequestedReviewers))}`);
+
+              // Fetch all reviews (paginated) to avoid missing earlier pages.
+              const allReviews = [];
+              for await (const resp of github.paginate.iterator(
+                  github.rest.pulls.listReviews,
+                  {
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      pull_number: prNumber,
+                      per_page: 100
+                  }
+              )) {
+                  allReviews.push(...resp.data);
+              }
+              console.log(`Fetched reviews count: ${allReviews.length}`);
+
+              // Build latest review by each user (exclude bots). Keep the last seen review object for each user.
+              const latestReviewsByUser = allReviews
+                  .filter(review => review.user && review.user.type !== 'Bot')
+                  .reduce((acc, review) => {
+                      acc[review.user.login] = review;
+                      return acc;
+                  }, {});
+              console.log(`Latest reviews by user: ${JSON.stringify(Object.keys(latestReviewsByUser))}`);
+
+              // Combine the set into an array for further processing
+              const allReviewers = Array.from(allEverRequestedReviewers);
+              const isPusherReviewer = allReviewers.includes(pusher) && pusher !== prAuthor;
+              console.log(`Is pusher a reviewer (and not the PR author)? ${isPusherReviewer}`);
+
+              if (!isPusherReviewer) {
+                  console.log('Pusher is not a reviewer or is the PR author - no notification.');
+                  return { shouldNotify: false };
+              }
+
+              // Build the list of other reviewers (excluding pusher)
+              const otherReviewers = allReviewers.filter(r => r !== pusher);
+              console.log(`Other reviewers: ${JSON.stringify(otherReviewers)}`);
+
+              // If there are no other reviewers, notify the designated person to assign a reviewer.
+              if (otherReviewers.length === 0) {
+                  console.log('No other reviewers found - will notify designated person to assign reviewers.');
+                  return {
+                      shouldNotify: true,
+                      scenario: 'no-reviewers',
+                      prNumber: prNumber,
+                      pusher: pusher
+                  };
+              }
+
+              // For each other reviewer compute status:
+              //  - approved: whether they are considered approved by our rules
+              //  - lastReviewDate: Date object for the latest submitted_at (or null)
+              const reviewerStatus = {};
+              otherReviewers.forEach(reviewer => {
+                  const latestReview = latestReviewsByUser[reviewer];
+                  const needsReview = requestedReviewers.includes(reviewer);
+                  reviewerStatus[reviewer] = {
+                      approved: false,
+                      lastReviewDate: latestReview && latestReview.submitted_at ? new Date(latestReview.submitted_at) : null
+                  };
+                  // Current logic: only count latest APPROVED if reviewer is NOT currently in requested_reviewers.
+                  // This mirrors the original behavior: if they are still requested, prior APPROVED may be stale.
+                  if (latestReview && !needsReview) {
+                      reviewerStatus[reviewer].approved = (latestReview.state === 'APPROVED');
+                  }
+              });
+              console.log('Reviewer status:', JSON.stringify(reviewerStatus, null, 2));
+
+              // Determine if all other reviewers are approved per our rules.
+              const allApproved = otherReviewers.every(r => reviewerStatus[r].approved);
+              console.log(`All other reviewers approved? ${allApproved}`);
+
+              if (!allApproved) {
+                  console.log('Not all reviewers approved - no notification.');
+                  return { shouldNotify: false };
+              }
+
+              // Select the last approver among otherReviewers using lastReviewDate.
+              // Defensive coding: we will prefer the reviewer with the latest submitted_at.
+              let lastApprover = null;
+              let lastDate = null;
+              for (const reviewer of otherReviewers) {
+                  const d = reviewerStatus[reviewer].lastReviewDate;
+                  if (d && (!lastDate || d > lastDate)) {
+                      lastDate = d;
+                      lastApprover = reviewer;
+                  }
+              }
+              if (!lastApprover) {
+                  // Defensive fallback: if for any reason no submitted_at was available, fallback to first other reviewer.
+                  // This avoids producing an invalid mention like @null and provides a safe default.
+                  console.log('No last approver could be determined from submitted_at timestamps - falling back to first other reviewer.');
+                  lastApprover = otherReviewers[0];
+              } else {
+                  console.log(`Last approver determined: ${lastApprover} at ${lastDate && lastDate.toISOString()}`);
+              }
+
+              return {
+                  shouldNotify: true,
+                  scenario: 'all-approved',
+                  prNumber: prNumber,
+                  pusher: pusher,
+                  reviewerMentions: `@${lastApprover}`
+              };
+            } catch (error) {
+              // Log the error and avoid failing the workflow abruptly; default to no notification.
+              console.error('Error in check-reviewers script:', error);
+              return { shouldNotify: false, error: error.message };
             }
-            
-            const allEverRequestedReviewers = new Set(requestedReviewers);
-            
-            allTimelineEvents.forEach(event => {
-                if (event.event === 'review_requested' && event.requested_reviewer) {
-                    if (event.requested_reviewer.type !== 'Bot') {
-                        allEverRequestedReviewers.add(event.requested_reviewer.login);
-                    }
-                }
-            });
-            
-            const { data: reviews } = await github.rest.pulls.listReviews({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: prNumber
-            });
-            
-            const latestReviewsByUser = reviews
-                .filter(review => review.user.type !== 'Bot')
-                .reduce((acc, review) => {
-                    acc[review.user.login] = review;
-                    return acc;
-                }, {});
-            
-            const allReviewers = Array.from(allEverRequestedReviewers);
-            const isPusherReviewer = allReviewers.includes(pusher) && pusher !== prAuthor;
-            
-            if (!isPusherReviewer) {
-                return { shouldNotify: false };
-            }
-            
-            const otherReviewers = allReviewers.filter(r => r !== pusher);
-            
-            if (otherReviewers.length === 0) {
-                return {
-                    shouldNotify: true,
-                    scenario: 'no-reviewers',
-                    prNumber: prNumber,
-                    pusher: pusher
-                };
-            }
-            
-            const reviewerStatus = {};
-            otherReviewers.forEach(reviewer => {
-                const latestReview = latestReviewsByUser[reviewer];
-                const needsReview = requestedReviewers.includes(reviewer);
-                reviewerStatus[reviewer] = {
-                    approved: false,
-                    lastReviewDate: latestReview ? new Date(latestReview.submitted_at) : null
-                };
-                if (latestReview && !needsReview) {
-                    reviewerStatus[reviewer].approved = (latestReview.state === 'APPROVED');
-                }
-            });
-            
-            const allApproved = otherReviewers.every(r => reviewerStatus[r].approved);
-            
-            if (!allApproved) {
-                return { shouldNotify: false };
-            }
-            
-            if (otherReviewers.length === 1) {
-                return {
-                    shouldNotify: true,
-                    scenario: 'single-reviewer-approved',
-                    prNumber: prNumber,
-                    pusher: pusher,
-                    reviewerMentions: `@${otherReviewers[0]}`
-                };
-            } else {
-                const lastApprover = otherReviewers.reduce((latest, reviewer) => {
-                    if (!latest ||
-                        (reviewerStatus[reviewer].lastReviewDate &&
-                         reviewerStatus[reviewer].lastReviewDate > reviewerStatus[latest].lastReviewDate)) {
-                        return reviewer;
-                    }
-                    return latest;
-                }, null);
-                
-                return {
-                    shouldNotify: true,
-                    scenario: 'all-approved',
-                    prNumber: prNumber,
-                    pusher: pusher,
-                    reviewerMentions: `@${lastApprover}`
-                };
-            }
-            
-      - name: Notify single reviewer who approved
-        if: fromJson(steps.check-reviewers.outputs.result).shouldNotify && fromJson(steps.check-reviewers.outputs.result).scenario == 'single-reviewer-approved'
-        uses: peter-evans/create-or-update-comment@v4
-        with:
-          issue-number: ${{ fromJson(steps.check-reviewers.outputs.result).prNumber }}
-          body: |
-            Reviewer @${{ fromJson(steps.check-reviewers.outputs.result).pusher }} has pushed new changes to this PR.
-            
-            ${{ fromJson(steps.check-reviewers.outputs.result).reviewerMentions }} - Please review the latest changes when you have a chance.
-            
+
       - name: Notify last approver
         if: fromJson(steps.check-reviewers.outputs.result).shouldNotify && fromJson(steps.check-reviewers.outputs.result).scenario == 'all-approved'
         uses: peter-evans/create-or-update-comment@v4
@@ -147,7 +189,7 @@ jobs:
             Reviewer @${{ fromJson(steps.check-reviewers.outputs.result).pusher }} has pushed new changes to this PR.
             
             ${{ fromJson(steps.check-reviewers.outputs.result).reviewerMentions }} - Please review the latest changes again.
-            
+
       - name: Notify designated person
         if: fromJson(steps.check-reviewers.outputs.result).shouldNotify && fromJson(steps.check-reviewers.outputs.result).scenario == 'no-reviewers'
         uses: peter-evans/create-or-update-comment@v4
