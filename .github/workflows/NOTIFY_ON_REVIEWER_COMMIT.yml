@@ -21,111 +21,90 @@ jobs:
             const pusher = context.payload.sender.login;
             const pr = context.payload.pull_request;
             const prAuthor = pr.user.login;
-            const prNumber = pr.number;
 
             const requestedReviewers = (pr.requested_reviewers || [])
               .filter(r => r.type !== 'Bot')
               .map(r => r.login);
 
-            const allEverRequestedReviewers = new Set(requestedReviewers);
-            for await (const page of github.paginate.iterator(
+            const allReviewers = new Set(requestedReviewers);
+            
+            const events = await github.paginate(
               github.rest.issues.listEventsForTimeline,
               {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: prNumber,
-                per_page: 100
+                ...context.repo,
+                issue_number: pr.number
               }
-            )) {
-              for (const event of page.data) {
-                if (event.event === 'review_requested' && event.requested_reviewer && event.requested_reviewer.type !== 'Bot') {
-                  allEverRequestedReviewers.add(event.requested_reviewer.login);
-                }
+            );
+            
+            for (const event of events) {
+              if (event.event === 'review_requested' && event.requested_reviewer?.type !== 'Bot') {
+                allReviewers.add(event.requested_reviewer.login);
               }
             }
 
-            const allReviews = [];
-            for await (const resp of github.paginate.iterator(
-              github.rest.pulls.listReviews,
-              {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: prNumber,
-                per_page: 100
-              }
-            )) {
-              allReviews.push(...resp.data);
+            if (!allReviewers.has(pusher) || pusher === prAuthor) {
+              return { shouldNotify: false };
             }
 
-            const latestReviewsByUser = {};
-            for (const review of allReviews) {
-              if (!review.user || review.user.type === 'Bot') continue;
-              latestReviewsByUser[review.user.login] = review;
-            }
-
-            const isPusherReviewer = allEverRequestedReviewers.has(pusher) && pusher !== prAuthor;
-            if (!isPusherReviewer) return { shouldNotify: false };
-
-            const otherReviewers = Array.from(allEverRequestedReviewers).filter(r => r !== pusher);
+            const otherReviewers = Array.from(allReviewers).filter(r => r !== pusher);
+            
             if (otherReviewers.length === 0) {
               return {
                 shouldNotify: true,
                 scenario: 'no-reviewers',
-                prNumber,
                 pusher
               };
             }
 
-            const reviewerStatus = {};
-            for (const reviewer of otherReviewers) {
-              const latestReview = latestReviewsByUser[reviewer];
-              const needsReview = requestedReviewers.includes(reviewer);
-              reviewerStatus[reviewer] = {
-                approved: false,
-                lastReviewDate: latestReview && latestReview.submitted_at ? new Date(latestReview.submitted_at) : null
-              };
-              if (latestReview && !needsReview) {
-                reviewerStatus[reviewer].approved = (latestReview.state === 'APPROVED');
+            const reviews = await github.paginate(
+              github.rest.pulls.listReviews,
+              {
+                ...context.repo,
+                pull_number: pr.number
               }
-            }
+            );
 
-            const allApproved = otherReviewers.every(r => reviewerStatus[r].approved);
+            const latestReviews = reviews
+              .filter(r => r.user?.type !== 'Bot')
+              .reduce((acc, r) => ({ ...acc, [r.user.login]: r }), {});
+
+            const currentRequested = new Set(requestedReviewers);
+
+            const allApproved = otherReviewers.every(reviewer => {
+              const review = latestReviews[reviewer];
+              return review?.state === 'APPROVED' && !currentRequested.has(reviewer);
+            });
+
             if (!allApproved) return { shouldNotify: false };
 
-            let lastApprover = null;
-            let lastDate = null;
-            for (const reviewer of otherReviewers) {
-              const d = reviewerStatus[reviewer].lastReviewDate;
-              if (d && (!lastDate || d > lastDate)) {
-                lastDate = d;
-                lastApprover = reviewer;
-              }
-            }
-            if (!lastApprover) lastApprover = otherReviewers[0];
+            const lastApprover = otherReviewers
+              .filter(r => latestReviews[r]?.submitted_at)
+              .sort((a, b) => 
+                new Date(latestReviews[b].submitted_at) - new Date(latestReviews[a].submitted_at)
+              )[0] || otherReviewers[0];
 
             return {
               shouldNotify: true,
               scenario: 'all-approved',
-              prNumber,
               pusher,
-              reviewerMentions: `@${lastApprover}`
+              lastApprover
             };
 
       - name: Notify last approver
         if: fromJson(steps.check-reviewers.outputs.result).shouldNotify && fromJson(steps.check-reviewers.outputs.result).scenario == 'all-approved'
         uses: peter-evans/create-or-update-comment@v4
         with:
-          issue-number: ${{ fromJson(steps.check-reviewers.outputs.result).prNumber }}
+          issue-number: ${{ github.event.pull_request.number }}
           body: |
             Reviewer @${{ fromJson(steps.check-reviewers.outputs.result).pusher }} has pushed new changes to this PR.
             
-            ${{ fromJson(steps.check-reviewers.outputs.result).reviewerMentions }} - Please review the latest changes again.
+            @${{ fromJson(steps.check-reviewers.outputs.result).lastApprover }} - Please review the latest changes again.
 
       - name: Notify designated person
         if: fromJson(steps.check-reviewers.outputs.result).shouldNotify && fromJson(steps.check-reviewers.outputs.result).scenario == 'no-reviewers'
         uses: peter-evans/create-or-update-comment@v4
         with:
-          issue-number: ${{ fromJson(steps.check-reviewers.outputs.result).prNumber }}
+          issue-number: ${{ github.event.pull_request.number }}
           body: |
             Reviewer @${{ fromJson(steps.check-reviewers.outputs.result).pusher }} has pushed changes, but no other reviewers are assigned.
             
