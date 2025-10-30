@@ -72,10 +72,14 @@ jobs:
             
             const reviewerOnlyReviews = Object.values(latestReviewsByUser).filter(r =>
                 r.user.type !== 'Bot'
+                && !r.user.login.endsWith('[bot]')
                 && allEverRequestedReviewers.has(r.user.login)
             );
 
-            const hasPendingHumanReviewers = pr.requested_reviewers.some(r => r.type !== 'Bot');
+            const hasPendingHumanReviewers = pr.requested_reviewers.some(r =>
+                r.type !== 'Bot'
+                && !r.login.endsWith('[bot]')
+            );
 
             const allReviewersApproved =
                 reviewerOnlyReviews.filter(r => r.state === 'APPROVED').length > 0
