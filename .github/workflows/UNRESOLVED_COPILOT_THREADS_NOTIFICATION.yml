@@ -85,7 +85,7 @@ jobs:
             core.setOutput('threadList', threadList);
 
       - name: Comment on PR to notify owner
-        if: steps.check-threads.outputs.prOwner
+        if: steps.check-threads.outputs.unresolvedCount
         uses: peter-evans/create-or-update-comment@v4
         with:
           issue-number: ${{ github.event.pull_request.number }}
