@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   check-approval-status:
-    uses: ./.github/workflows/check-all-reviewers-approved.yml
+    uses: ./.github/workflows/CHECK_ALL_REVIEWERS_APPROVED.yml
     with:
       pr_number: ${{ github.event.pull_request.number }}
 
