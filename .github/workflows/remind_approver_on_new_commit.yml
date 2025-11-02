@@ -8,111 +8,111 @@ permissions:
   pull-requests: write
 
 jobs:
-  notify-stale-reviewer:
+  check-pusher-is-reviewer:
     runs-on: ubuntu-latest
+    outputs:
+      should_skip: ${{ steps.check.outputs.should_skip }}
     steps:
-      - name: Find current approvers
-        id: find-approvers
+      - name: Check if pusher is reviewer
+        id: check
         uses: actions/github-script@v7
         with:
           script: |
-            const pusher = context.payload.sender.login;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
             const prNumber = context.payload.pull_request.number;
+            const pusher = context.payload.sender.login;
             const prAuthor = context.payload.pull_request.user.login;
-            const requestedReviewers = context.payload.pull_request.requested_reviewers.map(r => r.login);
 
-            console.log('Fetching timeline events...');
-            const timeline = await github.paginate(github.rest.issues.listEventsForTimeline, {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: prNumber,
-                per_page: 100
-            });
-            console.log(`Fetched ${timeline.length} timeline events`);
+            const allTimelineEvents = await github.paginate(
+                github.rest.issues.listEventsForTimeline,
+                {
+                    owner, 
+                    repo, 
+                    issue_number: prNumber, 
+                    per_page: 100
+                }
+            );
 
-            const allEverRequestedReviewers = new Set(requestedReviewers);
-            timeline.forEach(event => {
-                if (event.event === 'review_requested' && event.requested_reviewer) {
-                    allEverRequestedReviewers.add(event.requested_reviewer.login);
+            const allEverRequestedReviewers = new Set(
+                context.payload.pull_request.requested_reviewers.map(r => r.login)
+            );
+            allTimelineEvents.forEach(e => {
+                if (e.event === 'review_requested' && e.requested_reviewer) {
+                    allEverRequestedReviewers.add(e.requested_reviewer.login);
                 }
             });
-            console.log(`All requested reviewers: ${[...allEverRequestedReviewers].join(', ')}`);
 
-            const isPusherReviewer = allEverRequestedReviewers.has(pusher) && pusher !== prAuthor;
+            const isPusherReviewer = 
+                allEverRequestedReviewers.has(pusher) 
+                && pusher !== prAuthor;
+            
             if (isPusherReviewer) {
-                console.log(`${pusher} is a reviewer. Skipping (handled by "Notify on Reviewer Commit").`);
-                return { hasApprovals: false };
+                core.setOutput('should_skip', 'true');
+            } else {
+                core.setOutput('should_skip', 'false');
             }
 
-            console.log('Fetching all reviews...');
-            const reviews = await github.paginate(github.rest.pulls.listReviews, {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: prNumber,
-                per_page: 100
-            });
-            console.log(`Fetched ${reviews.length} reviews`);
+  check-approval-status:
+    needs: check-pusher-is-reviewer
+    if: needs.check-pusher-is-reviewer.outputs.should_skip == 'false'
+    uses: ./.github/workflows/check-all-reviewers-approved.yml
+    with:
+      pr_number: ${{ github.event.pull_request.number }}
 
-            const latestReviewsByUser = reviews.reduce((acc, review) => {
+  notify-stale-reviewer:
+    needs: [check-pusher-is-reviewer, check-approval-status]
+    runs-on: ubuntu-latest
+    if: |
+      needs.check-pusher-is-reviewer.outputs.should_skip == 'false'
+      && needs.check-approval-status.outputs.all_approved == 'true'
+    steps:
+      - name: Find most recent approver
+        id: find-approver
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const prNumber = context.payload.pull_request.number;
+
+            const allReviews = await github.paginate(
+                github.rest.pulls.listReviews,
+                {
+                    owner,
+                    repo,
+                    pull_number: prNumber,
+                    per_page: 100
+                }
+            );
+
+            const latestReviewsByUser = allReviews.reduce((acc, review) => {
                 const login = review.user.login;
-                if (!acc[login] || new Date(review.submitted_at) > new Date(acc[login].submitted_at)) {
+                if (
+                    !acc[login] 
+                    || new Date(review.submitted_at) > new Date(acc[login].submitted_at)
+                ) {
                     acc[login] = review;
                 }
                 return acc;
             }, {});
 
-            const reviewerOnlyReviews = Object.values(latestReviewsByUser)
+            const currentApprovers = Object.values(latestReviewsByUser)
                 .filter(review =>
-                    !review.user.login.endsWith('[bot]') &&
-                    allEverRequestedReviewers.has(review.user.login)
-                );
-
-            console.log(`Reviewer reviews count: ${reviewerOnlyReviews.length}`);
-
-            const currentApprovers = reviewerOnlyReviews
-                .filter(review => review.state === 'APPROVED')
+                    review.state === 'APPROVED'
+                    && review.user.type !== 'Bot'
+                    && !review.user.login.endsWith('[bot]')
+                )
                 .sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
 
-            const hasChangesRequested = reviewerOnlyReviews.some(review =>
-                review.state === 'CHANGES_REQUESTED'
-            );
+            if (currentApprovers.length === 0) return;
 
-            const hasOnlyCommented = reviewerOnlyReviews.some(review =>
-                review.state === 'COMMENTED'
-            );
-
-            const hasPendingHumanReviewers = requestedReviewers.some(reviewer =>
-                !reviewer.endsWith('[bot]')
-            );
-
-            console.log(`Approvers: ${currentApprovers.length}`);
-            console.log(`Has changes requested: ${hasChangesRequested}`);
-            console.log(`Has only commented: ${hasOnlyCommented}`);
-            console.log(`Has pending reviewers: ${hasPendingHumanReviewers}`);
-
-            const allReviewersApproved = currentApprovers.length > 0
-                && !hasPendingHumanReviewers
-                && !hasChangesRequested
-                && !hasOnlyCommented;
-
-            if (!allReviewersApproved) {
-                console.log('Not all reviewers approved. Workflow complete.');
-                return { hasApprovals: false };
-            }
-
-            const mostRecentApprover = currentApprovers[0].user.login;
-            console.log(`✅ All reviewers approved! Notifying: ${mostRecentApprover}`);
-
-            return {
-                hasApprovals: true,
-                prNumber,
-                mostRecentApprover
-            };
+            core.setOutput('mostRecentApprover', currentApprovers[0].user.login);
 
       - name: Comment on PR to notify stale reviewers
-        if: fromJson(steps.find-approvers.outputs.result).hasApprovals
+        if: steps.find-approver.outputs.mostRecentApprover
         uses: peter-evans/create-or-update-comment@v4
         with:
-          issue-number: ${{ fromJson(steps.find-approvers.outputs.result).prNumber }}
+          issue-number: ${{ github.event.pull_request.number }}
           body: |
-            @${{ fromJson(steps.find-approvers.outputs.result).mostRecentApprover }} A new commit has been pushed to this PR. Please review again if your review appears stale and merging is blocked.
+            @${{ steps.find-approver.outputs.mostRecentApprover }} A new commit has been pushed to this PR. Please review again if your review appears stale and merging is blocked.
