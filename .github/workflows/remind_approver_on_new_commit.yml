@@ -91,7 +91,18 @@ jobs:
                 }
             );
 
-            const currentApprovers = allReviews
+            // Group reviews by user and keep only the most recent review per user
+            const latestReviewByUser = new Map();
+            allReviews.forEach(review => {
+                const username = review.user.login;
+                const existing = latestReviewByUser.get(username);
+                if (!existing || new Date(review.submitted_at) > new Date(existing.submitted_at)) {
+                    latestReviewByUser.set(username, review);
+                }
+            });
+
+            // Filter for approved reviews from the latest review per user
+            const currentApprovers = Array.from(latestReviewByUser.values())
                 .filter(review =>
                     review.state === 'APPROVED'
                     && review.user.type !== 'Bot'
