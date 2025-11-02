@@ -61,7 +61,7 @@ jobs:
   check-approval-status:
     needs: check-pusher-is-reviewer
     if: needs.check-pusher-is-reviewer.outputs.should_skip == 'false'
-    uses: ./.github/workflows/check-all-reviewers-approved.yml
+    uses: ./.github/workflows/CHECK_ALL_REVIEWERS_APPROVED.yml
     with:
       pr_number: ${{ github.event.pull_request.number }}
 
