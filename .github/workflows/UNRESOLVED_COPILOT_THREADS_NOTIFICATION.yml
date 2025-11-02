@@ -31,40 +31,44 @@ jobs:
             const prNumber = context.payload.pull_request.number;
             const prOwner = context.payload.pull_request.user.login;
 
-            const allThreads = await github.paginate.iterator(
-                github.graphql.paginate,
-                `query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
-                    repository(owner: $owner, name: $repo) {
-                        pullRequest(number: $number) {
-                            reviewThreads(first: 100, after: $cursor) {
-                                nodes {
-                                    isResolved
-                                    comments(first: 1) {
-                                        nodes {
-                                            author { login }
-                                            body
-                                            url
+            let allThreads = [];
+            let hasNextPage = true;
+            let endCursor = null;
+
+            while (hasNextPage) {
+                const { repository } = await github.graphql(`
+                    query($owner: String!, $repo: String!, $number: Int!, $after: String) {
+                        repository(owner: $owner, name: $repo) {
+                            pullRequest(number: $number) {
+                                reviewThreads(first: 100, after: $after) {
+                                    nodes {
+                                        isResolved
+                                        comments(first: 1) {
+                                            nodes {
+                                                author { login }
+                                                body
+                                                url
+                                            }
                                         }
                                     }
-                                }
-                                pageInfo {
-                                    hasNextPage
-                                    endCursor
+                                    pageInfo {
+                                        hasNextPage
+                                        endCursor
+                                    }
                                 }
                             }
                         }
                     }
-                }`,
-                { owner, repo, number: prNumber }
-            );
+                `, { owner, repo, number: prNumber, after: endCursor });
 
-            const threads = [];
-            for await (const response of allThreads) {
-                threads.push(...response.repository.pullRequest.reviewThreads.nodes);
+                const threads = repository.pullRequest.reviewThreads.nodes;
+                allThreads.push(...threads);
+                hasNextPage = repository.pullRequest.reviewThreads.pageInfo.hasNextPage;
+                endCursor = repository.pullRequest.reviewThreads.pageInfo.endCursor;
             }
 
             const copilotLogins = ['copilot', 'github-copilot[bot]', 'github-advanced-security[bot]'];
-            const unresolvedCopilotThreads = threads.filter(thread =>
+            const unresolvedCopilotThreads = allThreads.filter(thread =>
                 !thread.isResolved
                 && thread.comments.nodes.length > 0
                 && thread.comments.nodes[0]?.author?.login
