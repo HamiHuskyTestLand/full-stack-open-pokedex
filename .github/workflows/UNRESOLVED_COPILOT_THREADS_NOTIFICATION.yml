@@ -30,13 +30,13 @@ jobs:
             const { owner, repo } = context.repo;
             const prNumber = context.payload.pull_request.number;
             const prOwner = context.payload.pull_request.user.login;
-
+            
             let allThreads = [];
             let hasNextPage = true;
             let endCursor = null;
-
+            
             while (hasNextPage) {
-                const { repository } = await github.graphql(`
+                const result = await github.graphql(`
                     query($owner: String!, $repo: String!, $number: Int!, $after: String) {
                         repository(owner: $owner, name: $repo) {
                             pullRequest(number: $number) {
@@ -60,30 +60,35 @@ jobs:
                         }
                     }
                 `, { owner, repo, number: prNumber, after: endCursor });
-
-                const threads = repository.pullRequest.reviewThreads.nodes;
+                
+                const threads = result.repository.pullRequest.reviewThreads.nodes;
                 allThreads.push(...threads);
-                hasNextPage = repository.pullRequest.reviewThreads.pageInfo.hasNextPage;
-                endCursor = repository.pullRequest.reviewThreads.pageInfo.endCursor;
+                hasNextPage = result.repository.pullRequest.reviewThreads.pageInfo.hasNextPage;
+                endCursor = result.repository.pullRequest.reviewThreads.pageInfo.endCursor;
             }
-
-            const copilotLogins = ['copilot', 'github-copilot[bot]', 'github-advanced-security[bot]'];
-            const unresolvedCopilotThreads = allThreads.filter(thread =>
-                !thread.isResolved
-                && thread.comments.nodes.length > 0
-                && thread.comments.nodes[0]?.author?.login
-                && copilotLogins.includes(thread.comments.nodes[0].author.login)
-            );
-
+            
+            const unresolvedCopilotThreads = allThreads.filter(thread => {
+                if (thread.isResolved || thread.comments.nodes.length === 0) return false;
+                
+                const authorLogin = thread.comments.nodes[0]?.author?.login;
+                if (!authorLogin) return false;
+                
+                return authorLogin === 'copilot' || 
+                       authorLogin === 'github-actions[bot]' ||
+                       authorLogin === 'github-copilot[bot]' ||
+                       authorLogin === 'github-advanced-security[bot]' ||
+                       authorLogin.toLowerCase().includes('copilot');
+            });
+            
             if (unresolvedCopilotThreads.length === 0) return;
-
+            
             const threadList = unresolvedCopilotThreads
                 .map((thread, index) => {
                     const preview = thread.comments.nodes[0].body.substring(0, 70);
                     return `${index + 1}. [View thread](${thread.comments.nodes[0].url}) - ${preview}${preview.length >= 70 ? '...' : ''}`;
                 })
                 .join('\n');
-
+            
             core.setOutput('prOwner', prOwner);
             core.setOutput('unresolvedCount', unresolvedCopilotThreads.length);
             core.setOutput('threadList', threadList);
@@ -94,7 +99,9 @@ jobs:
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body: |
-            @${{ steps.check-threads.outputs.prOwner }} All reviewers have approved this PR, but there are ${{ steps.check-threads.outputs.unresolvedCount }} unresolved Copilot review thread(s). Please review and resolve these suggestions. Thank you!
+            @${{ steps.check-threads.outputs.prOwner }} All reviewers have approved this PR! 🎉 
+            
+            However, there are ${{ steps.check-threads.outputs.unresolvedCount }} unresolved Copilot review thread(s) that need your attention. Please resolve these conversations.
 
-            **Unresolved Copilot review threads:**
+            **Unresolved Copilot threads:**
             ${{ steps.check-threads.outputs.threadList }}
