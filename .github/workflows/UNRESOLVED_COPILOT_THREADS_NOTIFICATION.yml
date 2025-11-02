@@ -62,7 +62,7 @@ jobs:
                 `, { owner, repo, number: prNumber, after: endCursor });
 
                 const threads = repository.pullRequest.reviewThreads.nodes;
-                allThreads = allThreads.concat(threads);
+                allThreads.push(...threads);
                 hasNextPage = repository.pullRequest.reviewThreads.pageInfo.hasNextPage;
                 endCursor = repository.pullRequest.reviewThreads.pageInfo.endCursor;
             }
