@@ -74,7 +74,6 @@ jobs:
                 if (!authorLogin) return false;
                 
                 return authorLogin === 'copilot' || 
-                       authorLogin === 'github-actions[bot]' ||
                        authorLogin === 'github-copilot[bot]' ||
                        authorLogin === 'github-advanced-security[bot]' ||
                        authorLogin.toLowerCase().includes('copilot');
