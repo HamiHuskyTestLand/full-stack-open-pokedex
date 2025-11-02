@@ -75,8 +75,7 @@ jobs:
                 
                 return authorLogin === 'copilot' || 
                        authorLogin === 'github-copilot[bot]' ||
-                       authorLogin === 'github-advanced-security[bot]' ||
-                       authorLogin.toLowerCase().includes('copilot');
+                       authorLogin === 'github-advanced-security[bot]';
             });
             
             if (unresolvedCopilotThreads.length === 0) return;
