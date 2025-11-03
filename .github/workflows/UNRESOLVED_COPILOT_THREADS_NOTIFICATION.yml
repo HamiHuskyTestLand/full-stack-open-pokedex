@@ -34,8 +34,8 @@ jobs:
         with:
           script: |
             const { owner, repo } = context.repo;
-            const prNumber = ${{ github.event.pull_request.number }};
-            const prOwner = '${{ github.event.pull_request.user.login }}';
+            const prNumber = context.payload.pull_request.number;
+            const prOwner = context.payload.pull_request.user.login;
             
             console.log(`Checking PR #${prNumber} for unresolved Copilot threads...`);
             
