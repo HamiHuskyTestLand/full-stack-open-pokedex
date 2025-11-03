@@ -11,35 +11,33 @@ permissions:
 
 jobs:
   check-approval-status:
+    if: github.event.review.state == 'APPROVED'  # 注意是大寫 APPROVED
     uses: ./.github/workflows/CHECK_ALL_REVIEWERS_APPROVED.yml
     with:
       pr_number: ${{ github.event.pull_request.number }}
 
-  debug-check:
-    needs: check-approval-status
-    runs-on: ubuntu-latest
-    steps:
-      - name: Debug outputs
-        run: |
-          echo "Review state: ${{ github.event.review.state }}"
-          echo "All approved output: ${{ needs.check-approval-status.outputs.all_approved }}"
-          echo "All approved type: $(echo '${{ needs.check-approval-status.outputs.all_approved }}' | cat -v)"
-
   check-copilot-threads:
     needs: check-approval-status
     runs-on: ubuntu-latest
-    if: |
-      github.event.review.state == 'approved' && 
-      needs.check-approval-status.outputs.all_approved == 'true'
+    if: needs.check-approval-status.outputs.all_approved == 'true'
     steps:
+      - name: Debug information
+        run: |
+          echo "Review state: ${{ github.event.review.state }}"
+          echo "All approved: ${{ needs.check-approval-status.outputs.all_approved }}"
+          echo "PR number: ${{ github.event.pull_request.number }}"
+          echo "PR owner: ${{ github.event.pull_request.user.login }}"
+          
       - name: Check for unresolved Copilot review threads
         id: check-threads
         uses: actions/github-script@v7
         with:
           script: |
             const { owner, repo } = context.repo;
-            const prNumber = context.payload.pull_request.number;
-            const prOwner = context.payload.pull_request.user.login;
+            const prNumber = ${{ github.event.pull_request.number }};
+            const prOwner = '${{ github.event.pull_request.user.login }}';
+            
+            console.log(`Checking PR #${prNumber} for unresolved Copilot threads...`);
             
             let allThreads = [];
             let hasNextPage = true;
@@ -55,7 +53,10 @@ jobs:
                                         isResolved
                                         comments(first: 1) {
                                             nodes {
-                                                author { login }
+                                                author { 
+                                                    login
+                                                    __typename
+                                                }
                                                 body
                                                 url
                                             }
@@ -77,37 +78,64 @@ jobs:
                 endCursor = result.repository.pullRequest.reviewThreads.pageInfo.endCursor;
             }
             
-            const copilotLogins = new Set(['copilot', 'github-copilot[bot]']);
+            console.log(`Total threads found: ${allThreads.length}`);
+            
+            const copilotLogins = new Set([
+                'copilot',
+                'github-copilot[bot]',
+                'copilot[bot]',
+                'github-actions[bot]'
+            ]);
             
             const unresolvedCopilotThreads = allThreads.filter(thread => {
                 if (thread.isResolved || thread.comments.nodes.length === 0) return false;
                 
                 const author = thread.comments.nodes[0]?.author;
-                return author && copilotLogins.has(author.login);
+                if (!author) return false;
+                
+                const isCopilot = copilotLogins.has(author.login) || 
+                                  author.login.toLowerCase().includes('copilot');
+                
+                if (isCopilot) {
+                    console.log(`Found Copilot thread from ${author.login}, resolved: ${thread.isResolved}`);
+                }
+                
+                return isCopilot;
             });
             
-            if (unresolvedCopilotThreads.length === 0) return;
+            console.log(`Unresolved Copilot threads: ${unresolvedCopilotThreads.length}`);
+            
+            if (unresolvedCopilotThreads.length === 0) {
+                console.log('No unresolved Copilot threads found');
+                return;
+            }
             
             const threadList = unresolvedCopilotThreads
                 .map((thread, index) => {
-                    const preview = thread.comments.nodes[0].body.substring(0, 70);
+                    const body = thread.comments.nodes[0].body;
+                    const preview = body.substring(0, 70).replace(/\n/g, ' ');
                     return `${index + 1}. [View thread](${thread.comments.nodes[0].url}) - ${preview}${preview.length >= 70 ? '...' : ''}`;
                 })
                 .join('\n');
             
             core.setOutput('prOwner', prOwner);
-            core.setOutput('unresolvedCount', unresolvedCopilotThreads.length);
+            core.setOutput('unresolvedCount', unresolvedCopilotThreads.length.toString());
             core.setOutput('threadList', threadList);
+            core.setOutput('hasUnresolved', 'true');
 
       - name: Comment on PR to notify owner
-        if: steps.check-threads.outputs.unresolvedCount
+        if: steps.check-threads.outputs.hasUnresolved == 'true'
         uses: peter-evans/create-or-update-comment@v4
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body: |
             @${{ steps.check-threads.outputs.prOwner }} All reviewers have approved this PR! 🎉 
             
-            However, there are ${{ steps.check-threads.outputs.unresolvedCount }} unresolved Copilot review thread(s) that need your attention. Please resolve these conversations.
-
-            **Unresolved Copilot threads:**
+            However, there are **${{ steps.check-threads.outputs.unresolvedCount }} unresolved Copilot review thread(s)** that need your attention. 
+            
+            Please resolve these conversations before merging:
+            
             ${{ steps.check-threads.outputs.threadList }}
+            
+            ---
+            _This is an automated message triggered when all human reviewers have approved but Copilot review threads remain unresolved._
