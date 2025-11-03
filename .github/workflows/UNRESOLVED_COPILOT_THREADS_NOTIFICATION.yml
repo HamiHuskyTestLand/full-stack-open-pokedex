@@ -93,8 +93,7 @@ jobs:
                 const author = thread.comments.nodes[0]?.author;
                 if (!author) return false;
                 
-                const isCopilot = copilotLogins.has(author.login) || 
-                                  author.login.toLowerCase().includes('copilot');
+                const isCopilot = copilotLogins.has(author.login);
                 
                 if (isCopilot) {
                     console.log(`Found Copilot thread from ${author.login}, resolved: ${thread.isResolved}`);
