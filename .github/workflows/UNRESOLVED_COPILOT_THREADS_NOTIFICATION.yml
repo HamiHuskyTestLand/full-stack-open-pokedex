@@ -108,9 +108,9 @@ jobs:
           body: |
             @${{ steps.check-threads.outputs.prOwner }} All reviewers have approved this PR! 🎉 
             
-            However, there are **${{ steps.check-threads.outputs.unresolvedCount }} unresolved Copilot review thread(s)** that need your attention. 
-            
-            Please resolve these conversations before merging:
+            However, there are ${{ steps.check-status.outputs.unresolvedCount }} unresolved Copilot review thread(s) that need your attention. Please resolve these conversations.
+
+            **Unresolved Copilot threads:**
             
             ${{ steps.check-threads.outputs.threadList }}
             
