@@ -44,10 +44,7 @@ jobs:
                                         isResolved
                                         comments(first: 1) {
                                             nodes {
-                                                author { 
-                                                    login
-                                                    __typename
-                                                }
+                                                author {login}
                                                 body
                                                 url
                                             }
