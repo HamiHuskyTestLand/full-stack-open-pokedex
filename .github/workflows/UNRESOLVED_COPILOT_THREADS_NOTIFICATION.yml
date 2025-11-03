@@ -21,23 +21,14 @@ jobs:
     runs-on: ubuntu-latest
     if: needs.check-approval-status.outputs.all_approved == 'true'
     steps:
-      - name: Debug information
-        run: |
-          echo "Review state: ${{ github.event.review.state }}"
-          echo "All approved: ${{ needs.check-approval-status.outputs.all_approved }}"
-          echo "PR number: ${{ github.event.pull_request.number }}"
-          echo "PR owner: ${{ github.event.pull_request.user.login }}"
-          
       - name: Check for unresolved Copilot review threads
         id: check-threads
         uses: actions/github-script@v7
         with:
           script: |
             const { owner, repo } = context.repo;
-            const prNumber = ${{ github.event.pull_request.number }};
-            const prOwner = '${{ github.event.pull_request.user.login }}';
-            
-            console.log(`Checking PR #${prNumber} for unresolved Copilot threads...`);
+            const prNumber = context.payload.pull_request.number;
+            const prOwner = context.payload.pull_request.user.login;
             
             let allThreads = [];
             let hasNextPage = true;
@@ -78,8 +69,6 @@ jobs:
                 endCursor = result.repository.pullRequest.reviewThreads.pageInfo.endCursor;
             }
             
-            console.log(`Total threads found: ${allThreads.length}`);
-            
             const unresolvedCopilotThreads = allThreads.filter(thread => {
                 if (thread.isResolved || thread.comments.nodes.length === 0) return false;
                 
@@ -91,17 +80,10 @@ jobs:
                     author.login.toLowerCase().includes('copilot') ||
                     author.login === 'github-actions[bot]';
                 
-                if (isCopilot) {
-                    console.log(`Found Copilot thread from ${author.login}, resolved: ${thread.isResolved}`);
-                }
-                
                 return isCopilot;
             });
             
-            console.log(`Unresolved Copilot threads: ${unresolvedCopilotThreads.length}`);
-            
             if (unresolvedCopilotThreads.length === 0) {
-                console.log('No unresolved Copilot threads found');
                 return;
             }
             
@@ -132,5 +114,4 @@ jobs:
             
             ${{ steps.check-threads.outputs.threadList }}
             
-            ---
-            _This is an automated message triggered when all human reviewers have approved but Copilot review threads remain unresolved._
+  
