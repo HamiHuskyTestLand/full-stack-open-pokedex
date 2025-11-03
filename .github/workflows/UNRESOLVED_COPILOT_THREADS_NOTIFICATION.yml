@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   check-approval-status:
-    if: github.event.review.state == 'APPROVED'  # 注意是大寫 APPROVED
+    if: github.event.review.state == 'APPROVED'
     uses: ./.github/workflows/CHECK_ALL_REVIEWERS_APPROVED.yml
     with:
       pr_number: ${{ github.event.pull_request.number }}
@@ -34,8 +34,8 @@ jobs:
         with:
           script: |
             const { owner, repo } = context.repo;
-            const prNumber = context.payload.pull_request.number;
-            const prOwner = context.payload.pull_request.user.login;
+            const prNumber = ${{ github.event.pull_request.number }};
+            const prOwner = '${{ github.event.pull_request.user.login }}';
             
             console.log(`Checking PR #${prNumber} for unresolved Copilot threads...`);
             
@@ -80,20 +80,16 @@ jobs:
             
             console.log(`Total threads found: ${allThreads.length}`);
             
-            const copilotLogins = new Set([
-                'copilot',
-                'github-copilot[bot]',
-                'copilot[bot]',
-                'github-actions[bot]'
-            ]);
-            
             const unresolvedCopilotThreads = allThreads.filter(thread => {
                 if (thread.isResolved || thread.comments.nodes.length === 0) return false;
                 
                 const author = thread.comments.nodes[0]?.author;
                 if (!author) return false;
                 
-                const isCopilot = copilotLogins.has(author.login);
+                const isCopilot = 
+                    author.login === 'Copilot' ||
+                    author.login.toLowerCase().includes('copilot') ||
+                    author.login === 'github-actions[bot]';
                 
                 if (isCopilot) {
                     console.log(`Found Copilot thread from ${author.login}, resolved: ${thread.isResolved}`);
