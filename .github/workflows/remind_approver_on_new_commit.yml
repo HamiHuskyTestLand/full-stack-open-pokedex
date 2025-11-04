@@ -73,7 +73,7 @@ jobs:
             const prNumber = context.payload.pull_request.number;
 
             const allEverRequestedReviewers = new Set(
-                JSON.parse('${{ needs.check-pusher-is-reviewer.outputs.all_reviewers }}')
+                ${{ fromJSON(needs.check-pusher-is-reviewer.outputs.all_reviewers) }}
             );
 
             const allReviews = await github.paginate(
