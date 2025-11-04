@@ -92,7 +92,7 @@ jobs:
                 })
                 .join('\n');
             
-            core.setOutput('prAuthor', prAuthor);  
+            core.setOutput('prAuthor', prAuthor);
             core.setOutput('unresolvedCount', unresolvedCopilotThreads.length.toString());
             core.setOutput('threadList', threadList);
             core.setOutput('hasUnresolved', 'true');
