@@ -84,11 +84,13 @@ jobs:
                 return;
             }
             
+            const PREVIEW_LENGTH = 70;
+            
             const threadList = unresolvedCopilotThreads
                 .map((thread, index) => {
                     const body = thread.comments.nodes[0].body;
-                    const preview = body.substring(0, 70).replace(/\n/g, ' ');
-                    return `${index + 1}. [View thread](${thread.comments.nodes[0].url}) - ${preview}${preview.length >= 70 ? '...' : ''}`;
+                    const preview = body.substring(0, PREVIEW_LENGTH).replace(/\n/g, ' ');
+                    return `${index + 1}. [View thread](${thread.comments.nodes[0].url}) - ${preview}${body.length > PREVIEW_LENGTH ? '...' : ''}`;
                 })
                 .join('\n');
             
