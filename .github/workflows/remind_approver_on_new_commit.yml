@@ -95,6 +95,7 @@ jobs:
                 .filter(review =>
                     review.state === 'APPROVED'
                     && review.user.type !== 'Bot'
+                    && !review.user.login.endsWith('[bot]')
                     && allEverRequestedReviewers.has(review.user.login)
                 )
                 .sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
