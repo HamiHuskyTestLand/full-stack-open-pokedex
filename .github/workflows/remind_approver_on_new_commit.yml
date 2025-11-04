@@ -67,13 +67,15 @@ jobs:
       - name: Find most recent approver
         id: find-approver
         uses: actions/github-script@v7
+        env:
+          ALL_REVIEWERS: ${{ needs.check-pusher-is-reviewer.outputs.all_reviewers }}
         with:
           script: |
             const { owner, repo } = context.repo;
             const prNumber = context.payload.pull_request.number;
 
             const allEverRequestedReviewers = new Set(
-                ${{ fromJSON(needs.check-pusher-is-reviewer.outputs.all_reviewers) }}
+                JSON.parse(process.env.ALL_REVIEWERS)
             );
 
             const allReviews = await github.paginate(
