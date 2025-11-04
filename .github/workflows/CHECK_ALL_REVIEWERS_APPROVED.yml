@@ -30,7 +30,9 @@ jobs:
                 pull_number: prNumber 
             });
 
-            let allTimelineEvents = [], page = 1, hasMore = true;
+            let allTimelineEvents = [];
+            let page = 1;
+            let hasMore = true;
             while (hasMore) {
                 const { data } = await github.rest.issues.listEventsForTimeline({
                     owner, 
