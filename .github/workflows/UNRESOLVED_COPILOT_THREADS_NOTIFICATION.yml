@@ -1,4 +1,4 @@
-name: Notify PR Owner of Unresolved Copilot Reviews
+name: Notify PR Author of Unresolved Copilot Threads
 
 on:
   pull_request_review:
@@ -28,7 +28,7 @@ jobs:
           script: |
             const { owner, repo } = context.repo;
             const prNumber = context.payload.pull_request.number;
-            const prOwner = context.payload.pull_request.user.login;
+            const prAuthor = context.payload.pull_request.user.login;  
             
             let allThreads = [];
             let hasNextPage = true;
@@ -92,23 +92,21 @@ jobs:
                 })
                 .join('\n');
             
-            core.setOutput('prOwner', prOwner);
+            core.setOutput('prAuthor', prAuthor);  
             core.setOutput('unresolvedCount', unresolvedCopilotThreads.length.toString());
             core.setOutput('threadList', threadList);
             core.setOutput('hasUnresolved', 'true');
 
-      - name: Comment on PR to notify owner
+      - name: Comment on PR to notify author
         if: steps.check-threads.outputs.hasUnresolved == 'true'
         uses: peter-evans/create-or-update-comment@v4
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body: |
-            @${{ steps.check-threads.outputs.prOwner }} All reviewers have approved this PR! 🎉 
+            @${{ steps.check-threads.outputs.prAuthor }} All reviewers have approved this PR! 🎉 
             
             However, there are ${{ steps.check-threads.outputs.unresolvedCount }} unresolved Copilot review thread(s) that need your attention. Please resolve these conversations.
 
             **Unresolved Copilot threads:**
             
             ${{ steps.check-threads.outputs.threadList }}
-            
-  
