@@ -28,7 +28,7 @@ jobs:
           script: |
             const { owner, repo } = context.repo;
             const prNumber = context.payload.pull_request.number;
-            const prAuthor = context.payload.pull_request.user.login;  
+            const prAuthor = context.payload.pull_request.user.login;
             
             let allThreads = [];
             let hasNextPage = true;
