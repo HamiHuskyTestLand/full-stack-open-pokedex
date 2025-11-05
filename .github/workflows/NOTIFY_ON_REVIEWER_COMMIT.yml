@@ -23,71 +23,73 @@ jobs:
             const prAuthor = pr.user.login;
 
             const requestedReviewers = (pr.requested_reviewers || [])
-              .filter(r => r.type !== 'Bot')
-              .map(r => r.login);
+                .filter(r => r.type !== 'Bot')
+                .map(r => r.login);
 
             const allReviewers = new Set(requestedReviewers);
             
             const events = await github.paginate(
-              github.rest.issues.listEventsForTimeline,
-              {
-                ...context.repo,
-                issue_number: pr.number
-              }
+                github.rest.issues.listEventsForTimeline,
+                {
+                    ...context.repo,
+                    issue_number: pr.number
+                }
             );
             
             for (const event of events) {
-              if (event.event === 'review_requested' && event.requested_reviewer?.type !== 'Bot') {
-                allReviewers.add(event.requested_reviewer.login);
-              }
+                if (event.event === 'review_requested' && event.requested_reviewer?.type !== 'Bot') {
+                    allReviewers.add(event.requested_reviewer.login);
+                }
             }
 
             if (!allReviewers.has(pusher) || pusher === prAuthor) {
-              return { shouldNotify: false };
+                return { shouldNotify: false };
             }
 
             const otherReviewers = Array.from(allReviewers).filter(r => r !== pusher);
             
             if (otherReviewers.length === 0) {
-              return {
-                shouldNotify: true,
-                scenario: 'no-reviewers',
-                pusher
-              };
+                return {
+                    shouldNotify: true,
+                    scenario: 'no-reviewers',
+                    pusher
+                };
             }
 
             const reviews = await github.paginate(
-              github.rest.pulls.listReviews,
-              {
-                ...context.repo,
-                pull_number: pr.number
-              }
+                github.rest.pulls.listReviews,
+                {
+                    ...context.repo,
+                    pull_number: pr.number
+                }
             );
 
             const latestReviews = reviews
-              .filter(r => r.user?.type !== 'Bot')
-              .reduce((acc, r) => ({ ...acc, [r.user.login]: r }), {});
+                .filter(r => r.user?.type !== 'Bot')
+                .reduce((acc, r) => ({ ...acc, [r.user.login]: r }), {});
 
             const currentRequested = new Set(requestedReviewers);
 
             const allApproved = otherReviewers.every(reviewer => {
-              const review = latestReviews[reviewer];
-              return review?.state === 'APPROVED' && !currentRequested.has(reviewer);
+                const review = latestReviews[reviewer];
+                return review?.state === 'APPROVED' && !currentRequested.has(reviewer);
             });
 
-            if (!allApproved) return { shouldNotify: false };
+            if (!allApproved) {
+                return { shouldNotify: false };
+            }
 
             const lastApprover = otherReviewers
-              .filter(r => latestReviews[r]?.submitted_at)
-              .sort((a, b) => 
-                new Date(latestReviews[b].submitted_at) - new Date(latestReviews[a].submitted_at)
-              )[0] || otherReviewers[0];
+                .filter(r => latestReviews[r]?.submitted_at)
+                .sort((a, b) => 
+                    new Date(latestReviews[b].submitted_at) - new Date(latestReviews[a].submitted_at)
+                )[0] || otherReviewers[0];
 
             return {
-              shouldNotify: true,
-              scenario: 'all-approved',
-              pusher,
-              lastApprover
+                shouldNotify: true,
+                scenario: 'all-approved',
+                pusher,
+                lastApprover
             };
 
       - name: Notify last approver
