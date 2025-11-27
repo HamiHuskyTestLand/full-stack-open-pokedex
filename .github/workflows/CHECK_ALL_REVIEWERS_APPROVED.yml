@@ -51,7 +51,8 @@ jobs:
             );
 
             const humanReviews = Object.values(latestReviewsByUser).filter(r =>
-                r.user. type !== 'Bot' && ! r.user.login.endsWith('[bot]')
+                r.user. type !== 'Bot' 
+                && ! r.user.login.endsWith('[bot]')
             );
 
             const hasChangesRequested = humanReviews.some(r => 
@@ -80,7 +81,7 @@ jobs:
 
             const allEverRequestedReviewers = new Set(
                 pr.requested_reviewers
-                    .filter(r => r. type !== 'Bot' && ! r.login.endsWith('[bot]'))
+                    .filter(r => r.type !== 'Bot' && !r.login.endsWith('[bot]'))
                     .map(r => r.login)
             );
             
