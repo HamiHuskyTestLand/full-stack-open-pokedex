@@ -14,7 +14,7 @@ jobs:
   check-approvals:
     runs-on: ubuntu-latest
     outputs:
-      all_approved: ${{ steps.check. outputs.all_approved }}
+      all_approved: ${{ steps.check.outputs.all_approved }}
     steps:
       - name: Check if all reviewers have approved
         id: check
