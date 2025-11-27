@@ -14,14 +14,14 @@ jobs:
   check-approvals:
     runs-on: ubuntu-latest
     outputs:
-      all_approved: ${{ steps.check. outputs.all_approved }}
+      all_approved: ${{ steps.check.outputs.all_approved }}
     steps:
       - name: Check if all reviewers have approved
         id: check
         uses: actions/github-script@v7
         with:
           script: |
-            const { owner, repo } = context. repo;
+            const { owner, repo } = context.repo;
             const prNumber = ${{ inputs.pr_number }};
             
             const { data: pr } = await github.rest.pulls.get({ 
@@ -45,14 +45,8 @@ jobs:
                 hasMore = data.length === 100;
             }
 
-            console.log('=== All Reviews (chronological) ===');
-            allReviews.forEach(r => {
-                console.log(`${r.user.login}: ${r.state} at ${r. submitted_at}`);
-            });
-            console.log('');
-
             const latestReviewsByUser = allReviews.reduce(
-                (acc, r) => ({ ... acc, [r.user.login]: r }), 
+                (acc, r) => ({ ...acc, [r.user.login]: r }), 
                 {}
             );
 
@@ -86,7 +80,7 @@ jobs:
 
             const allEverRequestedReviewers = new Set(
                 pr.requested_reviewers
-                    .filter(r => r.type !== 'Bot' && !r.login.endsWith('[bot]'))
+                    .filter(r => r. type !== 'Bot' && ! r.login.endsWith('[bot]'))
                     .map(r => r.login)
             );
             
@@ -94,7 +88,7 @@ jobs:
                 if (e.event === 'review_requested' && e.requested_reviewer) {
                     const login = e.requested_reviewer.login;
                     if (e.requested_reviewer.type !== 'Bot' && !login.endsWith('[bot]')) {
-                        allEverRequestedReviewers. add(login);
+                        allEverRequestedReviewers.add(login);
                     }
                 }
             });
@@ -105,7 +99,8 @@ jobs:
             }
 
             const hasPendingHumanReviewers = pr.requested_reviewers.some(r =>
-                r.type !== 'Bot' && !r.login.endsWith('[bot]')
+                r.type !== 'Bot' 
+                && !r.login.endsWith('[bot]')
             );
 
             const reviewerOnlyReviews = humanReviews.filter(r =>
@@ -115,6 +110,6 @@ jobs:
             const allReviewersApproved =
                 reviewerOnlyReviews.filter(r => r.state === 'APPROVED').length > 0
                 && !hasPendingHumanReviewers
-                && reviewerOnlyReviews. every(r => r.state === 'APPROVED');
+                && reviewerOnlyReviews.every(r => r.state === 'APPROVED');
 
             core.setOutput('all_approved', allReviewersApproved);
