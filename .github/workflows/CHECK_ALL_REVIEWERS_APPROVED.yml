@@ -87,7 +87,7 @@ jobs:
             allTimelineEvents.forEach(e => {
                 if (e.event === 'review_requested' && e.requested_reviewer) {
                     const login = e.requested_reviewer.login;
-                    if (e.requested_reviewer.type !== 'Bot' && !login. endsWith('[bot]')) {
+                    if (e.requested_reviewer.type !== 'Bot' && !login.endsWith('[bot]')) {
                         allEverRequestedReviewers.add(login);
                     }
                 }
