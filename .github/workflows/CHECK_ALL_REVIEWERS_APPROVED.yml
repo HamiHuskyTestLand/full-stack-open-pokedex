@@ -51,7 +51,7 @@ jobs:
             });
             console.log('');
 
-            const latestReviewsByUser = allReviews. reduce(
+            const latestReviewsByUser = allReviews.reduce(
                 (acc, r) => ({ ...acc, [r.user.login]: r }), 
                 {}
             );
