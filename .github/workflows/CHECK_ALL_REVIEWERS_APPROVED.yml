@@ -56,8 +56,8 @@ jobs:
                 {}
             );
 
-            const humanReviews = Object.values(latestReviewsByUser). filter(r =>
-                r. user.type !== 'Bot' && !r.user.login. endsWith('[bot]')
+            const humanReviews = Object.values(latestReviewsByUser).filter(r =>
+                r.user.type !== 'Bot' && !r.user.login.endsWith('[bot]')
             );
 
             console.log('=== Latest Reviews by Human ===');
