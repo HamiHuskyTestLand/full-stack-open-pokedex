@@ -67,7 +67,7 @@ jobs:
             page = 1;
             hasMore = true;
             while (hasMore) {
-                const { data } = await github.rest. issues.listEventsForTimeline({
+                const { data } = await github.rest.issues.listEventsForTimeline({
                     owner, 
                     repo, 
                     issue_number: prNumber, 
