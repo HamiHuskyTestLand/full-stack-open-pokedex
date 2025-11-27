@@ -104,7 +104,7 @@ jobs:
             );
 
             const reviewerOnlyReviews = humanReviews.filter(r =>
-                allEverRequestedReviewers.has(r. user.login)
+                allEverRequestedReviewers.has(r.user.login)
             );
 
             const allReviewersApproved =
