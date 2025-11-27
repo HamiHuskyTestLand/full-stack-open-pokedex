@@ -94,7 +94,7 @@ jobs:
                     per_page: 100, 
                     page: page++
                 });
-                allTimelineEvents. push(...data);
+                allTimelineEvents.push(...data);
                 hasMore = data.length === 100;
             }
 
