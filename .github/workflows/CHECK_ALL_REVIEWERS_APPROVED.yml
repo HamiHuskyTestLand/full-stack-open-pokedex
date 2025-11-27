@@ -14,7 +14,7 @@ jobs:
   check-approvals:
     runs-on: ubuntu-latest
     outputs:
-      all_approved: ${{ steps.check.outputs.all_approved }}
+      all_approved: ${{ steps.check. outputs.all_approved }}
     steps:
       - name: Check if all reviewers have approved
         id: check
@@ -41,18 +41,30 @@ jobs:
                     per_page: 100, 
                     page: page++
                 });
-                allReviews.push(...data);
+                allReviews.push(... data);
                 hasMore = data.length === 100;
             }
+
+            console.log('=== All Reviews (chronological) ===');
+            allReviews.forEach(r => {
+                console.log(`${r.user.login}: ${r.state} at ${r.submitted_at}`);
+            });
+            console.log('');
 
             const latestReviewsByUser = allReviews. reduce(
                 (acc, r) => ({ ...acc, [r.user.login]: r }), 
                 {}
             );
 
-            const humanReviews = Object.values(latestReviewsByUser).filter(r =>
-                r.user.type !== 'Bot' && !r. user.login.endsWith('[bot]')
+            const humanReviews = Object.values(latestReviewsByUser). filter(r =>
+                r. user.type !== 'Bot' && !r.user.login. endsWith('[bot]')
             );
+
+            console.log('=== Latest Reviews by Human ===');
+            humanReviews.forEach(r => {
+                console.log(`${r.user.login}: ${r.state} at ${r.submitted_at}`);
+            });
+            console. log('');
 
             const hasChangesRequested = humanReviews.some(r => 
                 r.state === 'CHANGES_REQUESTED'
@@ -62,10 +74,14 @@ jobs:
                 const requesters = humanReviews
                     .filter(r => r.state === 'CHANGES_REQUESTED')
                     .map(r => r.user.login);
+                console.log('=== Stage 1: Has Changes Requested ===');
                 console.log('Changes requested by:', requesters);
                 core.setOutput('all_approved', false);
                 return;
             }
+
+            console.log('=== Stage 1: No Changes Requested ===');
+            console.log('No one has requested changes\n');
 
             let allTimelineEvents = [];
             page = 1;
@@ -78,7 +94,7 @@ jobs:
                     per_page: 100, 
                     page: page++
                 });
-                allTimelineEvents.push(...data);
+                allTimelineEvents. push(...data);
                 hasMore = data.length === 100;
             }
 
@@ -97,26 +113,51 @@ jobs:
                 }
             });
 
+            console.log('=== Stage 2: Check Requested Reviewers ===');
+            console.log('All ever requested reviewers:', Array.from(allEverRequestedReviewers));
+
             if (allEverRequestedReviewers.size === 0) {
-                console.log('No requested reviewers');
+                console.log('No requested reviewers found');
                 core.setOutput('all_approved', false);
                 return;
             }
 
             const hasPendingHumanReviewers = pr.requested_reviewers.some(r =>
-                r.type !== 'Bot' && !r.login.endsWith('[bot]')
+                r.type !== 'Bot' && !r. login.endsWith('[bot]')
             );
 
-            const reviewerOnlyReviews = humanReviews.filter(r =>
+            if (hasPendingHumanReviewers) {
+                const pending = pr.requested_reviewers
+                    .filter(r => r.type !== 'Bot' && !r.login.endsWith('[bot]'))
+                    .map(r => r.login);
+                console.log('⏳ Pending reviewers (not reviewed yet):', pending);
+            }
+
+            const reviewerOnlyReviews = humanReviews. filter(r =>
                 allEverRequestedReviewers. has(r.user.login)
             );
 
+            console.log('\n=== Requested Reviewers Status ===');
+            allEverRequestedReviewers.forEach(login => {
+                const review = latestReviewsByUser[login];
+                if (! review) {
+                    console.log(`${login}: ⏳ pending (no review yet)`);
+                } else if (review.user.type === 'Bot' || review.user.login.endsWith('[bot]')) {
+                    console.log(`${login}: 🤖 bot (filtered out)`);
+                } else {
+                    console.log(`${login}: ${review.state} ${review.state === 'APPROVED' ? '✅' : '❌'}`);
+                }
+            });
+
             const allReviewersApproved =
-                reviewerOnlyReviews. filter(r => r.state === 'APPROVED').length > 0
+                reviewerOnlyReviews.filter(r => r.state === 'APPROVED').length > 0
                 && !hasPendingHumanReviewers
                 && reviewerOnlyReviews.every(r => r.state === 'APPROVED');
 
-            console.log('All requested reviewers:', Array.from(allEverRequestedReviewers));
-            console. log('All approved:', allReviewersApproved);
+            console.log('\n=== Final Check ===');
+            console.log('Has at least one approval:', reviewerOnlyReviews.filter(r => r.state === 'APPROVED').length > 0);
+            console.log('No pending reviewers:', !hasPendingHumanReviewers);
+            console.log('All requested reviewers approved:', reviewerOnlyReviews.every(r => r.state === 'APPROVED'));
+            console.log('🎯 Final result:', allReviewersApproved);
 
             core.setOutput('all_approved', allReviewersApproved);
