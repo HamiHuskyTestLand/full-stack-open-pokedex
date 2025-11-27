@@ -140,7 +140,7 @@ jobs:
             console.log('\n=== Requested Reviewers Status ===');
             allEverRequestedReviewers.forEach(login => {
                 const review = latestReviewsByUser[login];
-                if (! review) {
+                if (!review) {
                     console.log(`${login}: ⏳ pending (no review yet)`);
                 } else if (review.user.type === 'Bot' || review.user.login.endsWith('[bot]')) {
                     console.log(`${login}: 🤖 bot (filtered out)`);
