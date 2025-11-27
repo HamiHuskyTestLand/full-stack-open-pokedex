@@ -133,8 +133,8 @@ jobs:
                 console.log('⏳ Pending reviewers (not reviewed yet):', pending);
             }
 
-            const reviewerOnlyReviews = humanReviews. filter(r =>
-                allEverRequestedReviewers. has(r.user.login)
+            const reviewerOnlyReviews = humanReviews.filter(r =>
+                allEverRequestedReviewers.has(r.user.login)
             );
 
             console.log('\n=== Requested Reviewers Status ===');
