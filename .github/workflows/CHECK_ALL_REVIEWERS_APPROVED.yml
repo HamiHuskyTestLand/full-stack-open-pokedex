@@ -41,7 +41,7 @@ jobs:
                     per_page: 100, 
                     page: page++
                 });
-                allReviews.push(... data);
+                allReviews.push(...data);
                 hasMore = data.length === 100;
             }
 
