@@ -64,7 +64,7 @@ jobs:
             humanReviews.forEach(r => {
                 console.log(`${r.user.login}: ${r.state} at ${r.submitted_at}`);
             });
-            console. log('');
+            console.log('');
 
             const hasChangesRequested = humanReviews.some(r => 
                 r.state === 'CHANGES_REQUESTED'
