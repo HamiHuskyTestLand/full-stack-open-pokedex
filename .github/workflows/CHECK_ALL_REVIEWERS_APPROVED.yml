@@ -30,20 +30,14 @@ jobs:
                 pull_number: prNumber 
             });
 
-            let allReviews = [];
-            let page = 1;
-            let hasMore = true;
-            while (hasMore) {
-                const { data } = await github.rest.pulls.listReviews({
-                    owner, 
-                    repo, 
-                    pull_number: prNumber, 
-                    per_page: 100, 
-                    page: page++
-                });
-                allReviews.push(...data);
-                hasMore = data.length === 100;
-            }
+            const allReviews = await github.paginate(
+                github.rest.pulls.listReviews,
+                {
+                    owner,
+                    repo,
+                    pull_number: prNumber
+                }
+            );
 
             const latestReviewsByUser = allReviews.reduce(
                 (acc, r) => ({ ...acc, [r.user.login]: r }), 
@@ -51,7 +45,7 @@ jobs:
             );
 
             const humanReviews = Object.values(latestReviewsByUser).filter(r =>
-                r.user. type !== 'Bot' 
+                r.user.type !== 'Bot' 
                 && !r.user.login.endsWith('[bot]')
             );
 
@@ -60,32 +54,18 @@ jobs:
             );
 
             if (hasChangesRequested) {
-                const requesters = humanReviews
-                    .filter(r => r.state === 'CHANGES_REQUESTED')
-                    .map(r => r.user.login);
-                console.log('=== Stage 1: Has Changes Requested ===');
-                console.log('❌ Changes requested by:', requesters);
                 core.setOutput('all_approved', false);
                 return;
             }
 
-            console.log('=== Stage 1: No Changes Requested ===');
-            console.log('✅ No one has requested changes\n');
-
-            let allTimelineEvents = [];
-            page = 1;
-            hasMore = true;
-            while (hasMore) {
-                const { data } = await github.rest.issues.listEventsForTimeline({
-                    owner, 
-                    repo, 
-                    issue_number: prNumber, 
-                    per_page: 100, 
-                    page: page++
-                });
-                allTimelineEvents.push(...data);
-                hasMore = data.length === 100;
-            }
+            const allTimelineEvents = await github.paginate(
+                github.rest.issues.listEventsForTimeline,
+                {
+                    owner,
+                    repo,
+                    issue_number: prNumber
+                }
+            );
 
             const allEverRequestedReviewers = new Set(
                 pr.requested_reviewers
@@ -108,7 +88,7 @@ jobs:
             }
 
             const hasPendingHumanReviewers = pr.requested_reviewers.some(r =>
-                r.type !== 'Bot' 
+                r.type !== 'Bot'
                 && !r.login.endsWith('[bot]')
             );
 
