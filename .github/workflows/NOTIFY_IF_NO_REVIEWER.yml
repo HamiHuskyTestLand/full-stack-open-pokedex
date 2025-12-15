@@ -37,8 +37,9 @@ jobs:
                     repo: context.repo.repo,
                     pull_number: pr.number
                 });
-
-                const hasHumanReviewers = humanReviewers.length > 0;
+                
+                const hasReviews = reviews.length > 0;
+                const hasHumanReviewers = humanReviewers.length > 0 || hasReviews;  
 
                 core.setOutput('has_reviewers', hasHumanReviewers);
 
