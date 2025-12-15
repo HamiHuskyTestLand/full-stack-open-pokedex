@@ -32,6 +32,12 @@ jobs:
                     reviewer.type === 'User'
                 );
 
+                const { data: reviews } = await github. rest.pulls.listReviews({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    pull_number: pr.number
+                });
+
                 const hasHumanReviewers = humanReviewers.length > 0;
 
                 core.setOutput('has_reviewers', hasHumanReviewers);
