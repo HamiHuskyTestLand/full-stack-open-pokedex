@@ -1,4 +1,4 @@
-name: Notify PR Owner About Unresolved Copilot Threads
+name: Notify PR Author of Unresolved Copilot Threads
 
 on:
   pull_request_review:
@@ -7,137 +7,108 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  issues: write
 
 jobs:
+  check-approval-status:
+    if: github.event.review.state == 'APPROVED'
+    uses: ./.github/workflows/CHECK_ALL_REVIEWERS_APPROVED.yml
+    with:
+      pr_number: ${{ github.event.pull_request.number }}
+
   check-copilot-threads:
+    needs: check-approval-status
     runs-on: ubuntu-latest
-    if: github.event.review.state == 'approved'
+    if: needs.check-approval-status.outputs.all_approved == 'true'
     steps:
-      - name: Check if all reviewers approved and find unresolved Copilot threads
-        id: check-status
+      - name: Check for unresolved Copilot review threads
+        id: check-threads
         uses: actions/github-script@v7
         with:
           script: |
             const { owner, repo } = context.repo;
             const prNumber = context.payload.pull_request.number;
+            const prAuthor = context.payload.pull_request.user.login;
             
-            // Get all reviews for this PR
-            const { data: reviews } = await github.rest.pulls.listReviews({
-              owner,
-              repo,
-              pull_number: prNumber
-            });
+            let allThreads = [];
+            let hasNextPage = true;
+            let endCursor = null;
             
-            // Get PR details to check requested reviewers
-            const { data: pr } = await github.rest.pulls.get({
-              owner,
-              repo,
-              pull_number: prNumber
-            });
-            
-            const requestedReviewers = pr.requested_reviewers.map(r => r.login);
-            
-            // Find latest review for each reviewer
-            const latestReviews = {};
-            reviews.forEach(review => {
-              const reviewer = review.user.login;
-              if (!reviewer.endsWith('[bot]')) {
-                if (!latestReviews[reviewer] || review.submitted_at > latestReviews[reviewer].submitted_at) {
-                  latestReviews[reviewer] = review;
-                }
-              }
-            });
-            
-            // Check current status
-            const approvedReviewers = Object.values(latestReviews)
-              .filter(review => review.state === 'APPROVED');
-            
-            const hasChangesRequested = Object.values(latestReviews)
-              .some(review => review.state === 'CHANGES_REQUESTED');
-            
-            const hasPendingReviewers = requestedReviewers.length > 0;
-            
-            // Check if all conditions are met for approval
-            const allReviewersApproved = approvedReviewers.length > 0 && !hasChangesRequested && !hasPendingReviewers;
-            
-            console.log(`Approved reviewers: ${approvedReviewers.length}`);
-            console.log(`Has changes requested: ${hasChangesRequested}`);
-            console.log(`Has pending reviewers: ${hasPendingReviewers}`);
-            console.log(`All reviewers approved: ${allReviewersApproved}`);
-            
-            if (!allReviewersApproved) {
-              console.log('Not all reviewers have approved yet');
-              return;
+            while (hasNextPage) {
+                const result = await github.graphql(`
+                    query($owner: String!, $repo: String!, $number: Int!, $after: String) {
+                        repository(owner: $owner, name: $repo) {
+                            pullRequest(number: $number) {
+                                reviewThreads(first: 100, after: $after) {
+                                    nodes {
+                                        isResolved
+                                        comments(first: 1) {
+                                            nodes {
+                                                author {login}
+                                                body
+                                                url
+                                            }
+                                        }
+                                    }
+                                    pageInfo {
+                                        hasNextPage
+                                        endCursor
+                                    }
+                                }
+                            }
+                        }
+                    }
+                `, { owner, repo, number: prNumber, after: endCursor });
+                
+                const threads = result.repository.pullRequest.reviewThreads.nodes;
+                allThreads.push(...threads);
+                hasNextPage = result.repository.pullRequest.reviewThreads.pageInfo.hasNextPage;
+                endCursor = result.repository.pullRequest.reviewThreads.pageInfo.endCursor;
             }
             
-            // Get review threads using GraphQL to check for unresolved Copilot threads
-            const { repository } = await github.graphql(`
-              query($owner: String!, $repo: String!, $number: Int!) {
-                repository(owner: $owner, name: $repo) {
-                  pullRequest(number: $number) {
-                    reviewThreads(first: 100) {
-                      nodes {
-                        isResolved
-                        comments(first: 1) {
-                          nodes {
-                            author { 
-                              login 
-                            }
-                            body
-                            url
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            `, { owner, repo, number: prNumber });
-            
-            // Filter for unresolved Copilot threads
-            const unresolvedCopilotThreads = repository.pullRequest.reviewThreads.nodes
-              .filter(thread => {
-                if (thread.isResolved) return false;
+            const unresolvedCopilotThreads = allThreads.filter(thread => {
+                if (thread.isResolved || thread.comments.nodes.length === 0) return false;
                 
                 const author = thread.comments.nodes[0]?.author;
-                // Check if it's Copilot or GitHub bot
-                return author && (
-                  author.login === 'github-actions[bot]' ||
-                  author.login.includes('copilot') ||
-                  author.login === 'copilot'
-                );
-              });
+                if (!author) return false;
+                
+                const isCopilot = 
+                    author.login === 'Copilot' ||
+                    author.login.toLowerCase().includes('copilot') ||
+                    author.login === 'github-actions[bot]';
+                
+                return isCopilot;
+            });
             
             if (unresolvedCopilotThreads.length === 0) {
-              console.log('No unresolved Copilot threads found');
-              return;
+                return;
             }
             
-            // Create thread list for the comment
+            const PREVIEW_LENGTH = 70;
+            
             const threadList = unresolvedCopilotThreads
-              .map((thread, index) => {
-                const preview = thread.comments.nodes[0].body.substring(0, 70);
-                return `${index + 1}. [View thread](${thread.comments.nodes[0].url}) - ${preview}${preview.length >= 70 ? '...' : ''}`;
-              })
-              .join('\n');
+                .map((thread, index) => {
+                    const body = thread.comments.nodes[0].body;
+                    const preview = body.substring(0, PREVIEW_LENGTH).replace(/\n/g, ' ');
+                    return `${index + 1}. [View thread](${thread.comments.nodes[0].url}) - ${preview}${body.length > PREVIEW_LENGTH ? '...' : ''}`;
+                })
+                .join('\n');
             
-            // Set outputs for the next step
-            core.setOutput('hasUnresolvedCopilotThreads', 'true');
-            core.setOutput('unresolvedCount', unresolvedCopilotThreads.length);
+            core.setOutput('prAuthor', prAuthor);
+            core.setOutput('unresolvedCount', unresolvedCopilotThreads.length.toString());
             core.setOutput('threadList', threadList);
-            core.setOutput('prOwner', pr.user.login);
-            
-            console.log(`Found ${unresolvedCopilotThreads.length} unresolved Copilot threads`);
+            core.setOutput('hasUnresolved', 'true');
 
-      - name: Comment on PR to notify owner
-        if: steps.check-status.outputs.hasUnresolvedCopilotThreads == 'true'
+      - name: Comment on PR to notify author
+        if: steps.check-threads.outputs.hasUnresolved == 'true'
         uses: peter-evans/create-or-update-comment@v4
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body: |
-            @${{ steps.check-status.outputs.prOwner }} All reviewers have approved this PR! 🎉 
+            @${{ steps.check-threads.outputs.prAuthor }} All reviewers have approved this PR! 🎉 
             
-            However, there are ${{ steps.check-status.outputs.unresolvedCount }} unresolved Copilot review thread(s) that need your attention. Please resolve these conversations.
+            However, there are ${{ steps.check-threads.outputs.unresolvedCount }} unresolved Copilot review thread(s) that need your attention. Please resolve these conversations.
 
             **Unresolved Copilot threads:**
-            ${{ steps.check-status.outputs.threadList }}
+            
+            ${{ steps.check-threads.outputs.threadList }}
