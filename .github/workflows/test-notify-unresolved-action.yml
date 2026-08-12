@@ -7,7 +7,6 @@ on:
 permissions:
   contents: read
   pull-requests: write
-  issues: write
 
 jobs:
   test-notification:
@@ -17,11 +16,4 @@ jobs:
         uses: kreuz123/notify-unresolved-threads-action@main
         id: notify
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
           wait-seconds: 10
-      
-      - name: Check outputs
-        run: |
-          echo "Reviewer: ${{ steps.notify.outputs.reviewer }}"
-          echo "Unresolved Count: ${{ steps.notify.outputs.unresolvedCount }}"
-          echo "Thread List: ${{ steps.notify.outputs.threadList }}"
