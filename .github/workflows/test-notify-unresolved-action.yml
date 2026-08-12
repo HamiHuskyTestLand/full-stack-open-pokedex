@@ -16,9 +16,4 @@ jobs:
         uses: kreuz123/notify-unresolved-threads-action@main
         id: notify
         with:
-          wait-seconds: 10
-          comment-template: |
-            Please resolve your {unresolvedCount} thread(s) before we can merge.
-
-            {threadList}
-
+          wait-seconds: 30
