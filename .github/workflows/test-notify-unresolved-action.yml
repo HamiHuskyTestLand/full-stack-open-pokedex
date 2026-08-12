@@ -17,3 +17,8 @@ jobs:
         id: notify
         with:
           wait-seconds: 10
+          comment-template: |
+            Please resolve your {unresolvedCount} thread(s) before we can merge.
+
+            {threadList}
+
