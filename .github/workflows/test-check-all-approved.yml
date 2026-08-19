@@ -1,0 +1,34 @@
+name: Test Check All Reviewers Approved
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  check-approvals:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check all reviewers approved
+        id: approvals
+        uses: kreuz123/check-all-reviewers-approved-action@main
+        with:
+          pr-number: ${{ github.event.pull_request.number }}
+
+      - name: Display action outputs
+        run: |
+          echo "all-approved = ${{ steps.approvals.outputs.all-approved }}"
+          echo "requested-reviewers = ${{ steps.approvals.outputs.requested-reviewers }}"
+          echo "pending-reviewers = ${{ steps.approvals.outputs.pending-reviewers }}"
+
+      - name: Success path
+        if: steps.approvals.outputs.all-approved == 'true'
+        run: echo "SUCCESS: All reviewers approved."
+
+      - name: Pending or failed path
+        if: steps.approvals.outputs.all-approved != 'true'
+        run: echo "WAITING: Not all reviewers have approved yet."
