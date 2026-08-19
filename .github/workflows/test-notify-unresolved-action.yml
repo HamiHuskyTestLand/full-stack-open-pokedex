@@ -14,9 +14,3 @@ jobs:
       - name: Test notify-unresolved-threads-action
         uses: kreuz123/notify-unresolved-threads-action@main
         id: notify
-        with:
-          wait-seconds: 10
-          comment-template: |
-            Please resolve your {unresolvedCount} open conversation(s) before we can merge.
-
-            {threadList}
