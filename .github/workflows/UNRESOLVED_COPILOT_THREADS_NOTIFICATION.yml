@@ -29,11 +29,11 @@ jobs:
             const { owner, repo } = context.repo;
             const prNumber = context.payload.pull_request.number;
             const prAuthor = context.payload.pull_request.user.login;
-            
+
             let allThreads = [];
             let hasNextPage = true;
             let endCursor = null;
-            
+
             while (hasNextPage) {
                 const result = await github.graphql(`
                     query($owner: String!, $repo: String!, $number: Int!, $after: String) {
@@ -59,33 +59,33 @@ jobs:
                         }
                     }
                 `, { owner, repo, number: prNumber, after: endCursor });
-                
+
                 const threads = result.repository.pullRequest.reviewThreads.nodes;
                 allThreads.push(...threads);
                 hasNextPage = result.repository.pullRequest.reviewThreads.pageInfo.hasNextPage;
                 endCursor = result.repository.pullRequest.reviewThreads.pageInfo.endCursor;
             }
-            
+
             const unresolvedCopilotThreads = allThreads.filter(thread => {
                 if (thread.isResolved || thread.comments.nodes.length === 0) return false;
-                
+
                 const author = thread.comments.nodes[0]?.author;
                 if (!author) return false;
-                
-                const isCopilot = 
+
+                const isCopilot =
                     author.login === 'Copilot' ||
                     author.login.toLowerCase().includes('copilot') ||
                     author.login === 'github-actions[bot]';
-                
+
                 return isCopilot;
             });
-            
+
             if (unresolvedCopilotThreads.length === 0) {
                 return;
             }
-            
+
             const PREVIEW_LENGTH = 70;
-            
+
             const threadList = unresolvedCopilotThreads
                 .map((thread, index) => {
                     const body = thread.comments.nodes[0].body;
@@ -93,7 +93,7 @@ jobs:
                     return `${index + 1}. [View thread](${thread.comments.nodes[0].url}) - ${preview}${body.length > PREVIEW_LENGTH ? '...' : ''}`;
                 })
                 .join('\n');
-            
+
             core.setOutput('prAuthor', prAuthor);
             core.setOutput('unresolvedCount', unresolvedCopilotThreads.length.toString());
             core.setOutput('threadList', threadList);
@@ -101,14 +101,14 @@ jobs:
 
       - name: Comment on PR to notify author
         if: steps.check-threads.outputs.hasUnresolved == 'true'
-        uses: peter-evans/create-or-update-comment@v4
+        uses: peter-evans/create-or-update-comment@v5
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body: |
-            @${{ steps.check-threads.outputs.prAuthor }} All reviewers have approved this PR! 🎉 
-            
+            @${{ steps.check-threads.outputs.prAuthor }} All reviewers have approved this PR! 🎉
+
             However, there are ${{ steps.check-threads.outputs.unresolvedCount }} unresolved Copilot review thread(s) that need your attention. Please resolve these conversations.
 
             **Unresolved Copilot threads:**
-            
+
             ${{ steps.check-threads.outputs.threadList }}
