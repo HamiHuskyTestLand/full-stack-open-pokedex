@@ -21,14 +21,14 @@ jobs:
 
       - name: Display action outputs
         run: |
-          echo "all-approved = ${{ steps.approvals.outputs.all-approved }}"
-          echo "requested-reviewers = ${{ steps.approvals.outputs.requested-reviewers }}"
-          echo "pending-reviewers = ${{ steps.approvals.outputs.pending-reviewers }}"
+          echo "all-approved = ${{ steps.approvals.outputs['all-approved'] }}"
+          echo "requested-reviewers = ${{ steps.approvals.outputs['requested-reviewers'] }}"
+          echo "pending-reviewers = ${{ steps.approvals.outputs['pending-reviewers'] }}"
 
       - name: Success path
-        if: steps.approvals.outputs.all-approved == 'true'
+        if: ${{ steps.approvals.outputs['all-approved'] == 'true' }}
         run: echo "SUCCESS: All reviewers approved."
 
       - name: Pending or failed path
-        if: steps.approvals.outputs.all-approved != 'true'
+        if: ${{ steps.approvals.outputs['all-approved'] != 'true' }}
         run: echo "WAITING: Not all reviewers have approved yet."
