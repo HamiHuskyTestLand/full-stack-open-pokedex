@@ -1,4 +1,4 @@
-In this hypothetical case, our six-person team is actively developing a PHP-based application using the Yii2 framework on top of the LAMP stack (Linux, Apache, MySQL, PHP). To ensure smooth and reliable development and deployment, we’ve set up a CI/CD pipeline that includes linting, testing, and building.
+1234In this hypothetical case, our six-person team is actively developing a PHP-based application using the Yii2 framework on top of the LAMP stack (Linux, Apache, MySQL, PHP). To ensure smooth and reliable development and deployment, we’ve set up a CI/CD pipeline that includes linting, testing, and building.
 
 For **linting**, we use PHP_CodeSniffer to enforce coding standards and catch syntax issues early. It helps keep the code clean and consistent across contributors. For **testing**, Yii2 integrates well with Codeception and PHPUnit, both of which support unit and functional testing. These frameworks are easy to integrate into CI tools and help ensure application quality with every change.
 
