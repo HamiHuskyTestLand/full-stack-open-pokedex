@@ -1,0 +1,30 @@
+name: Notify PR author of unresolved automated review threads
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  notify:
+    if: ${{ github.event.review.state == 'approved' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check approval status
+        id: approval
+        uses: kreuz123/check-all-reviewers-approved-action@main
+        with:
+          pr-number: ${{ github.event.pull_request.number }}
+
+      - name: Notify about unresolved automated review threads
+        uses: kreuz123/notify-pr-author-unresolved-bot-threads-action@main
+        with:
+          pr-number: ${{ github.event.pull_request.number }}
+          all-approved: ${{ steps.approval.outputs.all-approved }}
+          comment-template: |
+            Hey {author}! There are {unresolvedCount} unresolved automated review thread(s) left:
+            {threadList}
