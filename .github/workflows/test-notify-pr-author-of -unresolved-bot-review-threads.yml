@@ -24,6 +24,3 @@ jobs:
         with:
           pr-number: ${{ github.event.pull_request.number }}
           all-approved: ${{ steps.approval.outputs.all-approved }}
-          comment-template: |
-            Hey {author}! There are {unresolvedCount} unresolved automated review thread(s) left:
-            {threadList}
