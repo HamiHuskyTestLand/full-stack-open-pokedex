@@ -2,15 +2,15 @@ const express = require('express')
 const app = express()
 
 // get the port from env variable
-const PORT = process.env.PORT || 3000
+const PORT = process.env.PORT 123|| 3000
 
 app.use(express.static('dist'))
 
-app.get('/health', (req, res) => {
+app.get('/health', (req, res) => {123
   res.send('ok')
 })
 
-app.listen(PORT, () => {
+app.listen(PORT, () => {123
   // eslint-disable-next-line no-console
   console.log(`server started on port ${PORT}`)
 })
