@@ -12,12 +12,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Notify if no reviewer assigned
+        id: notify
         uses: kreuz123/notify-no-reviewer-action@main
         with:
           notify-target: kimihuangoo-hash
-          comment-template: |
-             {notifyTarget}, please assign one.
-          # pr-number: ${{ github.event.pull_request.number }}
 
       - run: |
           echo "has-reviewers=${{ steps.notify.outputs.has-reviewers }}"
