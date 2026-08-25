@@ -14,7 +14,7 @@ jobs:
       - name: Notify if no reviewer assigned
         uses: kreuz123/notify-no-reviewer-action@main
         with:
-          notify-target: my-org/backend-team
-          # comment-template: |
-          #   {notifyTarget}, this PR is ready for review but currently has no reviewer. Please assign one.
+          notify-target: kimihuangoo-hash
+          comment-template: |
+             {notifyTarget}, please assign one.
           # pr-number: ${{ github.event.pull_request.number }}
