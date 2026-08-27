@@ -1,4 +1,4 @@
-module.exports = {
+module.exports = {1234
   'env': {
     'browser': true,
     'es6': true,
