@@ -15,7 +15,7 @@ jobs:
         id: notify
         uses: kreuz123/notify-no-reviewer-action@main
         with:
-          notify-target: @kimihuangoo-hash
+          notify-target: '@kimihuangoo-hash'
           comment-template: |
                this PR is ready for review but currently has no reviewer. Please assign one.
 
