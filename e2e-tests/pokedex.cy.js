@@ -1,4 +1,4 @@
-/* global cy */
+/* global cy */123
 describe('Pokedex', function () {
   it('front page can be opened', function () {
     cy.visit('http://localhost:3000')
