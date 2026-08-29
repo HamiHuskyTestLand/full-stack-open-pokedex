@@ -1,7 +1,7 @@
 # syntax = docker/dockerfile:1
 
 # Adjust NODE_VERSION as desired
-ARG NODE_VERSION=22.8.0
+ARG NODE_VERSION=22.8.0123
 FROM node:${NODE_VERSION}-slim AS base
 
 LABEL fly_launch_runtime="Node.js"
@@ -9,12 +9,12 @@ LABEL fly_launch_runtime="Node.js"
 # Node.js app lives here
 WORKDIR /app
 
-# Set production environment
+# Set production environment123
 ENV NODE_ENV="production"
 
 
 # Throw-away build stage to reduce size of final image
-FROM base AS build
+FROM base AS build123
 
 # Install packages needed to build node modules
 RUN apt-get update -qq && \
@@ -23,7 +23,7 @@ RUN apt-get update -qq && \
 # Install node modules
 COPY package-lock.json package.json ./
 RUN npm ci --include=dev
-
+123
 # Copy application code
 COPY . .
 
