@@ -1,4 +1,4 @@
-# Full Stack open CI/CD
+# Full Stack open CI/CD test check all approved
 
 This repository is used for the CI/CD module of the Full stack open course
 
