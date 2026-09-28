@@ -40,7 +40,11 @@ jobs:
           slack-reviewer-map: ${{ secrets.SLACK_REVIEWER_MAP }}
 
       - name: Print non-secret outputs
+        env:
+          CHANNEL_TS: ${{ steps.slack.outputs['channel-ts'] }}
+          DM_TS: ${{ steps.slack.outputs['dm-ts'] }}
+          DM_FAILURES: ${{ steps.slack.outputs['dm-failures'] }}
         run: |
-          echo "channel-ts=${{ steps.slack.outputs['channel-ts'] }}"
-          echo "dm-ts=${{ steps.slack.outputs['dm-ts'] }}"
-          echo "dm-failures=${{ steps.slack.outputs['dm-failures'] }}"
+          printf 'channel-ts=%s\n' "$CHANNEL_TS"
+          printf 'dm-ts=%s\n' "$DM_TS"
+          printf 'dm-failures=%s\n' "$DM_FAILURES"
