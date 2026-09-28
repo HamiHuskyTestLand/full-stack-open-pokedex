@@ -1,0 +1,46 @@
+name: Test Slack Dual Notify
+
+on:
+  workflow_dispatch:
+    inputs:
+      send_channel:
+        description: Send a test message to the channel
+        required: true
+        type: boolean
+        default: true
+      send_dm:
+        description: Send a test DM to mapped users
+        required: true
+        type: boolean
+        default: false
+      target_users:
+        description: Comma-separated GitHub usernames
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Test published action
+        id: slack
+        uses: kreuz123/slack-dual-notify-action@main
+        with:
+          message-template: |
+            :test_tube: Testing Slack Dual Notify Action from another repository
+            Source repository: ${{ github.repository }}
+            Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          target-users: ${{ inputs.target_users }}
+          send-channel: ${{ inputs.send_channel }}
+          send-dm: ${{ inputs.send_dm }}
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          slack-reviewer-map: ${{ secrets.SLACK_REVIEWER_MAP }}
+
+      - name: Print non-secret outputs
+        run: |
+          echo "channel-ts=${{ steps.slack.outputs['channel-ts'] }}"
+          echo "dm-ts=${{ steps.slack.outputs['dm-ts'] }}"
+          echo "dm-failures=${{ steps.slack.outputs['dm-failures'] }}"
