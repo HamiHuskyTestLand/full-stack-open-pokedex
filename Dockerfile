@@ -1,6 +1,6 @@
 # syntax = docker/dockerfile:1
 
-# Adjust NODE_VERSION as desired
+# Adjust NODE_VERSION as desired test comment template
 ARG NODE_VERSION=22.8.0
 FROM node:${NODE_VERSION}-slim AS base
 
