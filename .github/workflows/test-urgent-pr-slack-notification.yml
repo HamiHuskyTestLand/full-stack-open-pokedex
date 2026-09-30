@@ -1,0 +1,28 @@
+name: Urgent PR Slack Notification
+
+on:
+  pull_request:
+    types: [labeled, review_requested]
+
+permissions:
+  contents: read
+
+jobs:
+  notify_urgent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check urgent
+        id: check
+        uses: kreuz123/urgent-pr-slack-notification@main
+
+      - name: Send Slack notification
+        if: steps.check.outputs.urgent == 'true'
+        uses: kreuz123/slack-dual-notify-action@main
+        with:
+          message-template: ${{ steps.check.outputs.message }}
+          target-users: ${{ steps.check.outputs.target-users }}
+          send-channel: ${{ steps.check.outputs.send-channel }}
+          send-dm: ${{ steps.check.outputs.send-dm }}
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          slack-reviewer-map: ${{ secrets.SLACK_REVIEWER_MAP }}
