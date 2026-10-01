@@ -40,7 +40,7 @@ module.exports = {
       'error',
       'never'
     ],
-    'eqeqeq': 'error',
+    'eqeqeq': 'erro',
     'no-trailing-spaces': 'error',
     'object-curly-spacing': [
       'error', 'always'
