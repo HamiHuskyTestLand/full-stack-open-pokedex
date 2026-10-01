@@ -19,7 +19,11 @@ jobs:
         if: steps.check.outputs.urgent == 'true'
         uses: kreuz123/slack-dual-notify-action@main
         with:
-          message-template: ${{ steps.check.outputs.message }}
+          message-template: | 
+            *Urgent PR*
+            Title: ${{ github.event.pull_request.title }}
+            Author: ${{ github.event.pull_request.user.login }}
+            Link: ${{ github.event.pull_request.html_url }}
           target-users: ${{ steps.check.outputs.target-users }}
           send-channel: ${{ steps.check.outputs.send-channel }}
           send-dm: ${{ steps.check.outputs.send-dm }}
