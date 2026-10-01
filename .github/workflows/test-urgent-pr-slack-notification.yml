@@ -14,6 +14,12 @@ jobs:
       - name: Check urgent
         id: check
         uses: kreuz123/urgent-pr-slack-notification@main
+        with:
+          message-template: |
+            *Urgent PR*
+            Title: {{title}}
+            Author: {{author}}
+            Link: {{url}}
 
       - name: Send Slack notification
         if: steps.check.outputs.urgent == 'true'
