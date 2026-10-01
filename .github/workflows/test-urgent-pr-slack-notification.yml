@@ -14,16 +14,18 @@ jobs:
       - name: Check urgent
         id: check
         uses: kreuz123/urgent-pr-slack-notification@main
+        with:
+          message-template: |
+            *Urgent PR*
+            Title: {{title}}
+            Author: {{author}}
+            Link: {{url}}
 
       - name: Send Slack notification
         if: steps.check.outputs.urgent == 'true'
         uses: kreuz123/slack-dual-notify-action@main
         with:
-          message-template: | 
-            *Urgent PR*
-            Title: ${{ github.event.pull_request.title }}
-            Author: ${{ github.event.pull_request.user.login }}
-            Link: ${{ github.event.pull_request.html_url }}
+          message-template: ${{ steps.check.outputs.message }}
           target-users: ${{ steps.check.outputs.target-users }}
           send-channel: ${{ steps.check.outputs.send-channel }}
           send-dm: ${{ steps.check.outputs.send-dm }}
