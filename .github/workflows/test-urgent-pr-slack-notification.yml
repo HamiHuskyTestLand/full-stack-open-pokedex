@@ -27,6 +27,7 @@ jobs:
         with:
           message-template: ${{ steps.check.outputs.message }}
           target-users: ${{ steps.check.outputs.target-users }}
+          mention-users: ${{ steps.check.outputs.mention-users }}
           send-channel: ${{ steps.check.outputs.send-channel }}
           send-dm: ${{ steps.check.outputs.send-dm }}
           slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
