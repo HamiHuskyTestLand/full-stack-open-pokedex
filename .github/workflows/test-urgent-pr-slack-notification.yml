@@ -5,7 +5,7 @@ on:
     types: [labeled, review_requested]
 
 permissions:
-  contents: read
+  pull-requests: read
 
 jobs:
   notify_urgent:
