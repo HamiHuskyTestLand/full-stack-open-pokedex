@@ -12,5 +12,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Test notify-unresolved-threads-action
-        uses: kreuz123/notify-unresolved-threads-action@main
+        uses: kreuz123/notify-unresolved-threads-action@v1
         id: notify
